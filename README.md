@@ -190,12 +190,12 @@ fallback_topics = ["大家玩原神吗？"]
 
 | 命令 | 说明 | 示例 |
 |------|------|------|
-| `/amind help` | 显示帮助信息 | - |
-| `/amind list` | 查看当前活跃话题 | - |
-| `/amind check` | 检查话题状态 | `/amind check 话题ID` |
-| `/amind create` | 创建新话题 | `/amind create 标题:描述` |
-| `/amind initiate` | 手动发起话题 | `/amind initiate` |
-| `/amind models` | 查看模型配置 | `/amind models all` |
+| `/amind_help` | 显示帮助信息 | - |
+| `/amind_list` | 查看当前活跃话题 | - |
+| `/amind_check` | 检查话题状态 | `/amind_check 话题ID` |
+| `/amind_create` | 创建新话题 | `/amind_create 标题:描述` |
+| `/amind_initiate` | 手动发起话题 | `/amind_initiate` |
+| `/amind_models` | 查看模型配置 | `/amind_models all` |
 
 ### 🎪 自动功能
 
