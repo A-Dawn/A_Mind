@@ -1,0 +1,328 @@
+# amind - 配置文件
+# 基于大模型的智能话题发起、追踪和回复插件，支持权限控制和自动状态管理
+# 配置版本: 1.0.0
+# 在修改配置文件后请务必更改配置文件版本（后缀递增如1.0.1），否则将无法读取到配置！
+[plugin]
+
+# 是否启用插件
+enabled = false
+
+# 配置文件版本
+config_version = "1.0.0"
+
+
+[permissions]
+
+# 超级管理员用户ID列表
+super_admins = [""]
+
+# 管理员群组ID列表
+admin_groups = [""]
+
+# 启用权限继承机制
+enable_inheritance = true
+
+# 继承由用户控制聊天流
+inheritance_controlled_by_user = true
+
+# 全局管理员模式 - 开启后所有用户均为管理员
+global_admin_mode = false
+
+
+[debug]
+
+# 启用调试模式
+enable_debug_mode = false
+
+# 调试命令前缀
+debug_command_prefix = "/amind_debug"
+
+# 允许使用调试功能的用户ID
+allowed_debug_users = ["123456789"]
+
+
+[llm]
+
+# 固定为true，使用内置LLM
+use_builtin = true
+
+# 模型选择：utils/replyer/planner
+model_name = "utils"
+
+# 是否启用OpenAI作为备选
+fallback_openai = false
+
+# OpenAI备用API密钥
+openai_api_key = ""
+
+# 备选模型名称（当首选模型失败时使用）
+fallback_model_name = "replyer"
+
+# 生成温度
+temperature = 0.7
+
+# 最大token数
+max_tokens = 1500
+
+
+# ===========================
+# 服务级别模型配置
+# ===========================
+# 为不同服务配置专门的模型，提高性能和效果
+
+[services.brainstorm]
+
+# 头脑风暴专用模型（空表示使用全局默认）
+model_name = "utils"
+
+# 头脑风暴备选模型（空表示使用全局默认）
+fallback_model_name = "replyer"
+
+# 头脑风暴生成温度（0.8适合创意生成）
+temperature = 0.8
+
+# 头脑风暴最大token数
+max_tokens = 2000
+
+[services.decision]
+
+# 决策选择专用模型（空表示使用全局默认）
+model_name = "planner"
+
+# 决策选择备选模型（空表示使用全局默认）
+fallback_model_name = "utils"
+
+# 决策选择生成温度（0.3适合分析决策）
+temperature = 0.3
+
+# 决策选择最大token数
+max_tokens = 1000
+
+
+[prompts]
+
+# 匹配分析系统提示词
+matching_system_prompt = "你是一个话题匹配专家，负责分析消息内容与话题描述的相关性。请返回一个0-1之间的匹配分数。重要：只返回一个小数数字，不要包含任何解释、思考过程或其他文本。例如：0.85"
+
+# 自发起头脑风暴提示词
+initiate_brainstorm_prompt = "请基于以下信息进行头脑风暴，生成{num_topics}个相关的话题建议：\n\n上下文信息：\n- 原始话题：{original_topic}\n- 描述：{description}\n- 相关搜索结果：{search_results}\n- 知识库内容：{knowledge_content}\n\n要求：\n1. 每个话题都要有创新性和吸引力\n2. 话题应该与原始主题相关但不重复\n3. 考虑用户参与度和讨论潜力\n4. 提供简洁有力的标题和描述\n5. 为每个话题添加合适的标签\n\n请严格返回JSON格式，不要输出任何其他内容：\n{{\n  \"topics\": [\n    {{\n      \"title\": \"话题标题\",\n      \"description\": \"话题描述（50字以内）\",\n      \"category\": \"话题分类\",\n      \"novelty_score\": 0.0,\n      \"engagement_potential\": 0.0,\n      \"reasoning\": \"生成理由\",\n      \"tags\": [\"标签1\", \"标签2\"]\n    }}\n  ]\n}}\n"
+
+# 自发起决策提示词
+initiate_decision_prompt = "请从以下话题选项中选择最适合发起讨论的一个：\n\n原始话题：{original_topic}\n当前参与情况：{engagement_context}\n\n候选话题列表：\n{topic_list}\n\n选择标准：\n1. 相关性：与原始话题的相关程度\n2. 新颖性：话题的新鲜感和吸引力\n3. 参与潜力：能够激发用户讨论的可能性\n4. 时机合适性：当前是否是讨论的好时机\n5. 多样性：避免与现有话题过度重复\n\n请返回JSON格式：\n{{\n  \"selected_index\": 0,\n  \"confidence_score\": 0.0,\n  \"reasoning\": \"选择理由\",\n  \"criteria_scores\": {{\n    \"relevance\": 0.0,\n    \"novelty\": 0.0,\n    \"engagement_potential\": 0.0,\n    \"timing\": 0.0,\n    \"diversity\": 0.0\n  }}\n}}\n"
+
+# 进展评估提示词
+evaluation_prompt = "请评估以下话题的进展情况和用户参与度：\n\n话题信息：\n标题：{title}\n描述：{description}\n创建时间：{created_time}\n最后活动：{last_activity}\n回复数量：{reply_count}\n参与度分数：{engagement_score}\n\n最近回复：\n{recent_messages}\n\n请从以下维度进行评估：\n1. 用户参与度 (0-1)：活跃度、回复频率、用户多样性\n2. 话题进展度 (0-1)：是否达成预期目标、讨论深度\n3. 对话健康度 (0-1)：积极正面、建设性讨论\n\n请返回JSON格式：\n{{\n  \"engagement_score\": 0.0,\n  \"progress_score\": 0.0,\n  \"sentiment_score\": 0.0,\n  \"recommendation\": \"continue/pause/terminate/initiate\",\n  \"reason\": \"评估理由\"\n}}\n"
+
+# 可见性分析提示词
+visibility_analysis_prompt = "分析以下话题的参与情况，判断应该保持公开还是转为私有：\n{topic_info}\n请给出可见性建议和原因。"
+
+
+[topic_management]
+
+# 最大同时活跃话题数
+max_active_topics = 5
+
+# 话题最大持续时间
+max_topic_duration_days = 7
+
+# 自动归档时间
+auto_archive_days = 30
+
+# 默认可见性：public(公开)/private(私有)
+default_visibility = "public"
+
+# 强制可见性：空表示不强制，否则为public/private
+force_visibility = ""
+
+# 启用自动可见性转换（由大模型决定）
+enable_auto_visibility_change = true
+
+# 自发起检查间隔（小时）
+auto_initiate_interval_hours = 24
+
+# 单个话题最大自发起次数
+auto_initiate_max_attempts = 3
+
+
+[matching]
+
+# LLM匹配相似度阈值
+similarity_threshold = 0.6
+
+# 关键词匹配权重
+keyword_boost = 1.2
+
+# 上下文消息窗口大小
+context_window = 15
+
+# 时间衰减因子
+time_decay_factor = 0.95
+
+
+[state_check]
+
+# 状态检查间隔（分钟）
+check_interval_minutes = 20
+
+# 触发检查的最小回复数
+min_replies_for_check = 5
+
+# 用户参与度阈值
+engagement_threshold = 0.3
+
+# 启用用户终止意图检测功能
+enable_termination_detection = true
+
+[auto_initiate]
+
+# 是否在自发起话题中注入系统人设
+enable_personality_injection = true
+
+# 自发起策略：creation_only/activation_only/balanced/random
+initiate_strategy = "balanced"
+
+# 创建新话题的概率（0.0-1.0），仅在balanced模式下使用
+creation_probability = 0.6
+
+# 是否基于互联网搜索创建新话题
+creation_based_on_search = true
+
+# 最少需要多少搜索结果才创建话题
+min_search_results = 5
+
+# 基础搜索关键词列表
+search_keywords = ["社会热点新闻", "娱乐八卦资讯", "美食推荐攻略", "旅游景点介绍", "电影电视剧推荐", "音乐新歌榜单", "游戏行业动态", "时尚潮流趋势", "健康生活指南", "育儿教育经验", "职场发展建议", "投资理财知识", "家居装修灵感", "宠物养护知识", "运动健身方法", "心理健康话题", "文化艺术资讯", "生活小技巧"]
+
+# 技术类关键词列表
+tech_keywords = ["AI应用", "智能手机", "社交媒体", "移动支付", "在线教育", "远程办公", "直播技术", "短视频平台", "云计算服务", "大数据应用", "网络安全", "数字创新"]
+
+# 科学类关键词列表
+science_keywords = ["医学健康", "营养饮食", "环境保护", "气候变化", "新能源应用", "太空探索", "基因科技", "大脑科学", "生命科学", "材料创新"]
+
+# 社会类关键词列表
+social_keywords = ["社会热点", "教育话题", "医疗健康", "经济新闻", "文化传承", "城市生活", "乡村发展", "创业就业", "青年话题", "家庭教育", "养老保障", "住房政策", "交通出行", "社区生活", "公益活动", "志愿服务", "传统文化", "现代生活", "消费趋势", "社交关系"]
+
+# 娱乐类关键词列表
+entertainment_keywords = ["娱乐新闻", "电影推荐", "电视剧追剧", "音乐新歌", "综艺节目", "明星八卦", "体育赛事", "游戏攻略", "动漫新作", "短视频热点", "直播精彩", "电竞比赛", "时尚穿搭", "美妆护肤", "美食探店", "旅游攻略", "摄影技巧", "手工DIY", "创意设计", "艺术展览"]
+
+# 启动优先级：engagement/recency/random
+activation_priority = "engagement"
+
+# 启动话题的最小参与度阈值
+min_engagement_for_activation = 0.4
+
+# 考虑启动的最大话题数量
+max_topics_to_consider = 10
+
+# 默认聊天流配置，格式同plan1.stream_config
+default_stream_config = ""
+
+# 兜底话题列表，当LLM生成失败时使用
+fallback_topics = ["大家玩原神吗？"]
+
+# 使用兜底话题的概率（0.0-1.0），用于增加话题多样性
+fallback_topic_probability = 0.0
+
+
+[internet_search]
+
+# 搜索引擎选择：tavily/duckduckgo/searxng
+engine = "tavily"
+
+# Tavily API密钥
+tavily_api_key = ""
+
+# Tavily API基础URL
+tavily_base_url = "https://api.tavily.com"
+
+# SearXNG实例URL
+searxng_base_url = ""
+
+# 搜索请求超时时间（秒）
+timeout = 15
+
+# 最大搜索结果数量
+max_results = 5
+
+
+[plan1]
+
+# Plan-1：是否启用短周期 tick + 概率触发自动发起
+enabled = false
+
+# Plan-1：目标聊天流配置，如 qq:123456:group
+stream_config = "qq:1145141919810:group"
+
+# Plan-1：tick 周期（秒）
+tick_interval_seconds = 120
+
+# Plan-1：每 tick 触发概率（0-1）
+trigger_probability = 0.2
+
+# Plan-1：触发冷却（秒）
+cooldown_seconds = 1800
+
+
+# Plan-1：模型配置（可选，为整个plan配置专用模型）
+[plan1.model_config]
+
+# Plan-1专用模型（空表示使用全局默认）
+model_name = ""
+
+# Plan-1备选模型（空表示使用全局默认）
+fallback_model_name = ""
+
+# Plan-1生成温度
+temperature = 0.7
+
+# Plan-1最大token数
+max_tokens = 1500
+
+
+# Plan-1：服务专用配置（可选，为plan内的特定服务配置模型）
+[plan1.services.brainstorm]
+
+# Plan-1头脑风暴专用模型（空表示使用上级配置）
+model_name = ""
+
+# Plan-1头脑风暴备选模型（空表示使用上级配置）
+fallback_model_name = ""
+
+# Plan-1头脑风暴生成温度
+temperature = 0.8
+
+# Plan-1头脑风暴最大token数
+max_tokens = 2000
+
+[plan1.services.decision]
+
+# Plan-1决策选择专用模型（空表示使用上级配置）
+model_name = ""
+
+# Plan-1决策选择备选模型（空表示使用上级配置）
+fallback_model_name = ""
+
+# Plan-1决策选择生成温度
+temperature = 0.3
+
+# Plan-1决策选择最大token数
+max_tokens = 1000
+
+
+[plan2]
+
+# Plan-2：是否启用短周期 tick + 概率触发自动发起
+enabled = false
+
+# Plan-2：目标聊天流配置，如 qq:123456:group
+stream_config = "qq:1145141919811:private"
+
+# Plan-2：tick 周期（秒）
+tick_interval_seconds = 120
+
+# Plan-2：每 tick 触发概率（0-1）
+trigger_probability = 0.2
+
+# Plan-2：触发冷却（秒）
+cooldown_seconds = 1800
+

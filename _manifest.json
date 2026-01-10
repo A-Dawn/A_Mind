@@ -1,0 +1,93 @@
+{
+  "manifest_version": 1,
+  "name": "A_Mind 智能话题管理插件",
+  "version": "0.1.0",
+  "description": "基于大模型的智能话题发起、追踪和回复插件，支持权限控制和自动状态管理",
+  "author": {
+    "name": "A-Dawn",
+    "url": "https://github.com/A-Dawn"
+  },
+  "license": "AGPL-v3.0-or-later",
+  "host_application": {
+    "min_version": "0.11.0",
+    "max_version": "0.12.3"
+  },
+  "homepage_url": "https://github.com/A-Dawn/A_Mind",
+  "repository_url": "https://github.com/A-Dawn/A_Mind",
+  "keywords": [
+    "topic",
+    "conversation",
+    "AI",
+    "management",
+    "automation"
+  ],
+  "categories": [
+    "Entertainment & Interaction"
+  ],
+  "default_locale": "zh-CN",
+  "locales_path": "_locales",
+  "plugin_info": {
+    "is_built_in": false,
+    "plugin_type": "conversation_management",
+    "components": [
+      {
+        "type": "command",
+        "name": "topic_create",
+        "description": "创建新话题"
+      },
+      {
+        "type": "command",
+        "name": "topic_list",
+        "description": "查看话题列表"
+      },
+      {
+        "type": "command",
+        "name": "topic_update",
+        "description": "更新话题信息"
+      },
+      {
+        "type": "command",
+        "name": "topic_delete",
+        "description": "删除话题"
+      },
+      {
+        "type": "command",
+        "name": "topic_visibility",
+        "description": "设置话题可见性"
+      },
+      {
+        "type": "command",
+        "name": "topic_check",
+        "description": "手动状态检查"
+      },
+      {
+        "type": "command",
+        "name": "help_command",
+        "description": "显示帮助信息"
+      },
+      {
+        "type": "command",
+        "name": "debug_commands",
+        "description": "调试功能命令"
+      },
+      {
+        "type": "action",
+        "name": "message_tracker",
+        "description": "消息追踪和回复"
+      },
+      {
+        "type": "action",
+        "name": "state_check",
+        "description": "主动状态检查"
+      }
+    ],
+    "features": [
+      "智能话题管理",
+      "权限控制系统",
+      "大模型集成",
+      "自动状态检查",
+      "调试功能支持"
+    ]
+  },
+  "id": "ARC.A_Mind"
+}
