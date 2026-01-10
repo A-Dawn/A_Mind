@@ -2,7 +2,6 @@
 
 **ARC's MIND – 智能话题与主动思维插件（for A_Mind）**
 
-<div align="center">
 ![A_Mind Logo](https://img.shields.io/badge/A_Mind-智能话题管理-blue?style=for-the-badge)
 ![Version](https://img.shields.io/badge/版本-0.1.0-orange?style=flat-square)
 ![Python](https://img.shields.io/badge/Python-3.11+-green?style=flat-square)
@@ -11,8 +10,6 @@
 *💡 智能话题发起、自动追踪、长期学习调整*
 
 [快速开始](#rocket-快速开始) • [功能特性](#sparkles-功能特性) • [使用指南](#📚-使用指南)
-
-</div>
 
 ---
 
