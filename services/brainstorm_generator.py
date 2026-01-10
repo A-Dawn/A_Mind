@@ -439,7 +439,7 @@ class BrainstormGenerator:
 
         # 使用传入的模型名称或默认配置
         if primary_model is None:
-        primary_model_name = self.config.get("llm.model_name", "tool_use")
+            primary_model_name = self.config.get("llm.model_name", "tool_use")
         else:
             primary_model_name = primary_model
 
