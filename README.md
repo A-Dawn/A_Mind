@@ -1,6 +1,6 @@
-# A_mind - 智能话题管理插件
+# A_Mind - 智能话题管理插件
 
-**ARC's MIND – 智能话题与主动思维插件（for A_Mind）**
+**ARC's MIND – 智能话题与主动思维插件（for MaiBot）**
 
 ![A_Mind Logo](https://img.shields.io/badge/A_Mind-智能话题管理-blue?style=for-the-badge)
 ![Version](https://img.shields.io/badge/版本-0.1.0-orange?style=flat-square)
