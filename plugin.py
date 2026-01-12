@@ -50,7 +50,7 @@ from src.plugin_system import (
 )
 from src.plugin_system.apis import llm_api, generator_api
 from src.plugin_system.apis.llm_api import get_available_models
-from src.common.logger import get_logger
+from .core.amind_logger import get_logger
 from src.config.config import global_config
 from src.manager.async_task_manager import AsyncTask, async_task_manager
 
@@ -61,13 +61,14 @@ from .core.permissions import PermissionManager
 from .models import *
 from .services import *
 from .commands import *
+from .commands.keyword_weights_command import KeywordWeightsCommand
 from .handlers import *
 from .repositories.database_manager import DatabaseManager
 from .database import init_database
 from .utils import get_global_db_manager
 
 # 获取日志器
-logger = get_logger("A_Mind")
+logger = get_logger(__name__)
 
 # 全局插件实例，用于权限检查装饰器
 _plugin_instance = None
@@ -112,14 +113,18 @@ class AMindPlugin(BasePlugin):
     config_file_name = "config.toml"
 
     def __init__(self, *args, **kwargs):
+        # 首先调用父类初始化
         super().__init__(*args, **kwargs)
 
         # 设置全局插件实例
         global _plugin_instance
         _plugin_instance = self
 
-        # 初始化依赖注入容器
+        # 初始化依赖注入容器（先创建容器，这样才有config_manager）
         self.container = DependencyContainer(self)
+
+        # ===== 然后初始化日志管理器（使用容器中的config_manager）=====
+        self._init_logger_manager()
 
         # 向后兼容：设置全局数据库管理器
         global _db_manager_instance
@@ -136,12 +141,33 @@ class AMindPlugin(BasePlugin):
         except Exception as e:
             logger.error(f"[A_Mind] 插件初始化异常: {e}")
 
+    def _init_logger_manager(self):
+        """初始化日志管理器（在容器创建后执行）"""
+        try:
+            from .core.amind_logger import AMindLogger, set_amind_logger, get_logger
+
+            # 创建日志管理器（使用容器中的config_manager）
+            logger_mgr = AMindLogger(self.container.config_manager)
+            set_amind_logger(logger_mgr)
+
+            # 使用新的logger记录初始化
+            init_logger = get_logger("plugin")
+            init_logger.info("[A_Mind] 日志管理器初始化完成")
+
+        except Exception as e:
+            # 如果日志管理器初始化失败，使用默认logger记录错误
+            import traceback
+            from src.common.logger import get_logger as base_get_logger
+            fallback_logger = base_get_logger("A_Mind")
+            fallback_logger.error(f"[A_Mind] 日志管理器初始化失败: {e}")
+            fallback_logger.error(f"[A_Mind] 错误详情: {traceback.format_exc()}")
+
     # 配置Schema定义（保持与原版本兼容）
     # 基础配置schema（不包含动态plan）
     _base_config_schema = {
         "plugin": {
             "enabled": ConfigField(type=bool, default=False, description="是否启用插件"),
-            "config_version": ConfigField(type=str, default="1.0.0", description="配置文件版本"),
+            "config_version": ConfigField(type=str, default="2.0.0", description="配置文件版本"),
         },
         "permissions": {
             "super_admins": ConfigField(type=list, default=[""], description="超级管理员用户ID列表"),
@@ -151,6 +177,98 @@ class AMindPlugin(BasePlugin):
             "global_admin_mode": ConfigField(
                 type=bool, default=False, description="全局管理员模式 - 开启后所有用户均为管理员"
             ),
+        },
+        "logging": {
+            # ===== 总体控制 =====
+            "enabled": ConfigField(type=bool, default=True, description="是否启用日志输出（完全禁用A_Mind所有日志）"),
+            # ===== 预设模式（提供合理的默认值）=====
+            "preset": ConfigField(
+                type=str, default="normal",
+                description="日志预设模式：minimal(最小)/normal(正常)/verbose(详细)/debug(调试)",
+                choices=["minimal", "normal", "verbose", "debug"]
+            ),
+            # ===== 全局级别（可覆盖预设）=====
+            "level": ConfigField(
+                type=str, default="INHERIT",
+                description="全局日志级别（INHERIT表示使用预设值）",
+                choices=["INHERIT", "CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"]
+            ),
+            # ===== 模块级别控制（可覆盖全局级别）=====
+            "modules": {
+                "services": ConfigField(
+                    type=str, default="INHERIT",
+                    description="服务层日志级别（INHERIT表示继承上级配置）",
+                    choices=["INHERIT", "CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG", "OFF"]
+                ),
+                "handlers": ConfigField(
+                    type=str, default="INHERIT",
+                    description="处理器层日志级别（INHERIT表示继承上级配置）",
+                    choices=["INHERIT", "CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG", "OFF"]
+                ),
+                "commands": ConfigField(
+                    type=str, default="INHERIT",
+                    description="命令层日志级别（INHERIT表示继承上级配置）",
+                    choices=["INHERIT", "CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG", "OFF"]
+                ),
+                "core": ConfigField(
+                    type=str, default="INHERIT",
+                    description="核心模块日志级别（INHERIT表示继承上级配置）",
+                    choices=["INHERIT", "CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG", "OFF"]
+                ),
+                "database": ConfigField(
+                    type=str, default="INHERIT",
+                    description="数据库日志级别（INHERIT表示继承上级配置）",
+                    choices=["INHERIT", "CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG", "OFF"]
+                ),
+            },
+            # ===== 特定功能开关 =====
+            "features": {
+                "show_search_results": ConfigField(
+                    type=bool, default=False, description="显示搜索结果详情（通常输出较多）"
+                ),
+                "show_llm_prompts": ConfigField(
+                    type=bool, default=False, description="显示LLM提示词（通常很长）"
+                ),
+                "show_topic_matching": ConfigField(
+                    type=bool, default=False, description="显示话题匹配详情"
+                ),
+                "show_initiation_workflow": ConfigField(
+                    type=bool, default=False, description="显示自发起工作流详细步骤"
+                ),
+                "show_performance_metrics": ConfigField(
+                    type=bool, default=False, description="显示性能指标（耗时、计数等）"
+                ),
+            },
+            # ===== 输出格式控制 =====
+            "format": {
+                "show_timestamp": ConfigField(
+                    type=bool, default=False, description="显示时间戳"
+                ),
+                "show_module_name": ConfigField(
+                    type=bool, default=False, description="显示模块名称"
+                ),
+                "use_colors": ConfigField(
+                    type=bool, default=True, description="使用彩色输出（终端支持时）"
+                ),
+                "compact_mode": ConfigField(
+                    type=bool, default=True, description="紧凑模式（减少空白行）"
+                ),
+            },
+            # ===== 文件输出（可选）=====
+            "file_output": {
+                "enabled": ConfigField(
+                    type=bool, default=False, description="启用日志文件输出"
+                ),
+                "path": ConfigField(
+                    type=str, default="logs/amind.log", description="日志文件路径"
+                ),
+                "max_size_mb": ConfigField(
+                    type=int, default=10, description="单个日志文件最大大小（MB）"
+                ),
+                "backup_count": ConfigField(
+                    type=int, default=5, description="保留的日志文件备份数量"
+                ),
+            },
         },
         "debug": {
             "enable_debug_mode": ConfigField(type=bool, default=False, description="启用调试模式"),
@@ -418,6 +536,28 @@ class AMindPlugin(BasePlugin):
                                     ),
                                 },
                             },
+                            "keyword_weights": {
+                                "enable_manual_weights": ConfigField(
+                                    type=bool, default=False,
+                                    description=f"Plan-{plan_num}：是否启用手动权重（覆盖自动分析）"
+                                ),
+                                "tech_weight": ConfigField(
+                                    type=float, default=0.25,
+                                    description=f"Plan-{plan_num}：技术类关键词权重（0.0-1.0）"
+                                ),
+                                "science_weight": ConfigField(
+                                    type=float, default=0.25,
+                                    description=f"Plan-{plan_num}：科学类关键词权重（0.0-1.0）"
+                                ),
+                                "social_weight": ConfigField(
+                                    type=float, default=0.25,
+                                    description=f"Plan-{plan_num}：社会类关键词权重（0.0-1.0）"
+                                ),
+                                "entertainment_weight": ConfigField(
+                                    type=float, default=0.25,
+                                    description=f"Plan-{plan_num}：娱乐类关键词权重（0.0-1.0）"
+                                ),
+                            },
                         }
         except Exception:
             # 如果无法读取配置文件，使用默认的plan1和plan2
@@ -450,6 +590,7 @@ class AMindPlugin(BasePlugin):
             (HelpCommand.get_command_info(), HelpCommand),
             (DebugCommand.get_command_info(), DebugCommand),
             (ModelConfigCommand.get_command_info(), ModelConfigCommand),
+            (KeywordWeightsCommand.get_command_info(), KeywordWeightsCommand),
             # 事件处理器组件
             (AMindStartHandler.get_handler_info(), AMindStartHandler),
             (MessageTrackerEventHandler.get_handler_info(), MessageTrackerEventHandler),

@@ -6,19 +6,28 @@ import time
 from typing import Tuple, Optional
 
 from src.plugin_system import BaseCommand, ComponentInfo, ComponentType, CommandInfo
-from src.common.logger import get_logger
 from ..core.permissions import require_permission
+
+# Logger import with fallback
+try:
+    from ..core.amind_logger import get_logger
+except ImportError:
+    from core.amind_logger import get_logger
 try:
     from ..utils import get_global_db_manager
     from ..models.topic import Topic
     from ..handlers.auto_initiate_action import AutoInitiateAction
 except ImportError:
-    # 直接导入时使用绝对导入
-    from plugins.A_Mind.utils import get_global_db_manager
-    from plugins.A_Mind.models.topic import Topic
-    from plugins.A_Mind.handlers.auto_initiate_action import AutoInitiateAction
+    import sys
+    from pathlib import Path
+    plugin_path = Path(__file__).parent.parent
+    if str(plugin_path) not in sys.path:
+        sys.path.insert(0, str(plugin_path))
+    from utils import get_global_db_manager
+    from models.topic import Topic
+    from handlers.auto_initiate_action import AutoInitiateAction
 
-logger = get_logger("A_Mind")
+logger = get_logger(__name__)
 
 
 class InitiateCommand(BaseCommand):
@@ -144,7 +153,7 @@ class InitiateCommand(BaseCommand):
 
             # 设置依赖注入容器
             try:
-                from plugins.A_Mind.plugin import _plugin_instance
+                from ..plugin import _plugin_instance
                 if _plugin_instance and hasattr(_plugin_instance, 'container'):
                     auto_initiate_action.container = _plugin_instance.container
                 else:
@@ -155,6 +164,15 @@ class InitiateCommand(BaseCommand):
 
                         def get(self, key, default=None):
                             return self._get_config(key, default)
+
+                        def get_model_config(self, plan_name=None, service_name=None):
+                            """获取模型配置"""
+                            return {
+                                "model_name": self.get("llm.model_name", "tool_use"),
+                                "fallback_model_name": self.get("llm.fallback_model_name", "tool_use"),
+                                "temperature": self.get("llm.temperature", 0.7),
+                                "max_tokens": self.get("llm.max_tokens", 1500),
+                            }
 
                     auto_initiate_action.config_manager = ConfigManager(self.get_config)
             except Exception:

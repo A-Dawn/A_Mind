@@ -1,7 +1,7 @@
 {
   "manifest_version": 1,
   "name": "A_Mind 智能话题管理插件",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "基于大模型的智能话题发起、追踪和回复插件，支持权限控制和自动状态管理",
   "author": {
     "name": "A-Dawn",

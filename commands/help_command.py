@@ -4,9 +4,14 @@
 from typing import Tuple
 
 from src.plugin_system import BaseCommand, ComponentInfo, ComponentType, CommandInfo
-from src.common.logger import get_logger
 
-logger = get_logger("A_Mind")
+# Logger import with fallback
+try:
+    from ..core.amind_logger import get_logger
+except ImportError:
+    from core.amind_logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class HelpCommand(BaseCommand):

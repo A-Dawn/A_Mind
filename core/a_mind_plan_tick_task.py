@@ -6,12 +6,17 @@ import random
 import time
 from typing import Callable
 
-from src.common.logger import get_logger
 from src.manager.async_task_manager import AsyncTask
+
+# Logger import with fallback
+try:
+    from .amind_logger import get_logger
+except ImportError:
+    from core.amind_logger import get_logger
 from ..services.auto_sender import AutoSender
 from ..handlers.auto_initiate_action import AutoInitiateAction
 
-logger = get_logger("A_Mind")
+logger = get_logger(__name__)
 
 
 class AMindPlanTickTask(AsyncTask):
@@ -39,63 +44,60 @@ class AMindPlanTickTask(AsyncTask):
 
     async def run(self):
         plan_display = self._plan_name.upper()
-        print(f"[A_Mind][{plan_display}] Tick执行开始 - {time.strftime('%H:%M:%S', time.localtime())}")
+        logger.debug(f"[{plan_display}] Tick执行开始 - {time.strftime('%H:%M:%S', time.localtime())}")
 
         # 1) 处理 AutoSender 队列
         try:
             await self._auto_sender.process_queue()
-            print(f"[A_Mind][{plan_display}] AutoSender队列处理完成")
+            logger.debug(f"[{plan_display}] AutoSender队列处理完成")
         except Exception as e:
-            print(f"[A_Mind][{plan_display}] process_queue失败: {e}")
-            logger.error(f"[A_Mind][{plan_display}] process_queue failed: {e}")
+            logger.error(f"[{plan_display}] AutoSender队列处理失败: {e}")
 
         # 2) 概率触发 + 冷却
         enabled = bool(self._get_config(f"{self._plan_name}.enabled", False))
-        print(f"[A_Mind][{plan_display}] {self._plan_name.upper()}启用状态: {enabled}")
+        logger.debug(f"[{plan_display}] {self._plan_name.upper()}启用状态: {enabled}")
         if not enabled:
-            print(f"[A_Mind][{plan_display}] {self._plan_name.upper()}未启用，跳过自动发起")
+            logger.debug(f"[{plan_display}] {self._plan_name.upper()}未启用，跳过自动发起")
             return
 
         cooldown_seconds = int(self._get_config(f"{self._plan_name}.cooldown_seconds", 1800))
         prob = float(self._get_config(f"{self._plan_name}.trigger_probability", 0.02))
         now = time.time()
 
-        print(f"[A_Mind][{plan_display}] 配置 - 冷却时间:{cooldown_seconds}秒, 触发概率:{prob}")
+        logger.debug(f"[{plan_display}] 配置 - 冷却时间:{cooldown_seconds}秒, 触发概率:{prob}")
 
         if self._last_auto_initiate_at and (now - self._last_auto_initiate_at) < cooldown_seconds:
             remaining = int(cooldown_seconds - (now - self._last_auto_initiate_at))
-            print(f"[A_Mind][{plan_display}] 冷却中，还需等待{remaining}秒")
+            logger.debug(f"[{plan_display}] 冷却中，还需等待{remaining}秒")
             return
 
         random_value = random.random()
-        print(f"[A_Mind][{plan_display}] 随机值:{random_value:.3f}, 触发阈值:{prob}")
+        logger.debug(f"[{plan_display}] 随机值:{random_value:.3f}, 触发阈值:{prob}")
         if random_value >= prob:
-            print(f"[A_Mind][{plan_display}] 未触发概率检查，跳过本次执行")
+            logger.debug(f"[{plan_display}] 未触发概率检查，跳过本次执行")
             return
 
-        print(f"[A_Mind][{plan_display}] 通过概率检查，开始执行自动发起")
+        logger.info(f"[{plan_display}] 通过概率检查，开始执行自动发起")
 
         async with self._lock:
             now = time.time()
             if self._last_auto_initiate_at and (now - self._last_auto_initiate_at) < cooldown_seconds:
-                print(f"[A_Mind][{plan_display}] 并发检查：仍在冷却中")
+                logger.warning(f"[{plan_display}] 并发检查：仍在冷却中")
                 return
 
             stream_config = str(self._get_config(f"{self._plan_name}.stream_config", "")).strip()
-            print(f"[A_Mind][{plan_display}] 聊天流配置: '{stream_config}'")
+            logger.debug(f"[{plan_display}] 聊天流配置: '{stream_config}'")
             if not stream_config:
-                print(f"[A_Mind][{plan_display}] 聊天流配置为空，跳过自动发起")
-                logger.warning(f"[A_Mind][{plan_display}] stream_config empty; skip auto initiate")
+                logger.warning(f"[{plan_display}] 聊天流配置为空，跳过自动发起")
                 return
 
             stream_id = self._parse_stream_config_to_stream_id(stream_config)
-            print(f"[A_Mind][{plan_display}] 解析得到stream_id: '{stream_id}'")
+            logger.debug(f"[{plan_display}] 解析得到stream_id: '{stream_id}'")
             if not stream_id:
-                print(f"[A_Mind][{plan_display}] stream_config无效: {stream_config}")
-                logger.warning(f"[A_Mind][{plan_display}] invalid stream_config: {stream_config}")
+                logger.warning(f"[{plan_display}] stream_config无效: {stream_config}")
                 return
 
-            print(f"[A_Mind][{plan_display}] 开始执行自动发起，目标聊天流: {stream_id}")
+            logger.info(f"[{plan_display}] 开始执行自动发起，目标聊天流: {stream_id}")
 
             # AutoInitiateAction 依赖 self.message.chat_stream.stream_id，因此这里构造一个最小 message
             class _PlanChatStream:
@@ -111,11 +113,9 @@ class AMindPlanTickTask(AsyncTask):
             ok, msg = await self._auto_initiate_action.execute()
             if ok:
                 self._last_auto_initiate_at = time.time()
-                print(f"[A_Mind][{plan_display}] ✅ 自动发起成功: {msg}")
-                logger.info(f"[A_Mind][{plan_display}] auto initiate ok: {msg}")
+                logger.info(f"[{plan_display}] ✅ 自动发起成功: {msg}")
             else:
-                print(f"[A_Mind][{plan_display}] ❌ 自动发起失败: {msg}")
-                logger.warning(f"[A_Mind][{plan_display}] auto initiate failed: {msg}")
+                logger.warning(f"[{plan_display}] ❌ 自动发起失败: {msg}")
 
     def _parse_stream_config_to_stream_id(self, stream_config_str: str) -> str:
         """从 `platform:id:type` 解析 stream_id。

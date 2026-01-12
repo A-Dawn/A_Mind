@@ -150,8 +150,11 @@ def require_permission(permission_level: str = "admin"):
 
                 if permission_manager is None:
                     # 如果无法获取权限管理器，记录警告但允许执行（向后兼容）
-                    from src.common.logger import get_logger
-                    logger = get_logger("A_Mind")
+                    try:
+                        from .amind_logger import get_logger
+                    except ImportError:
+                        from core.amind_logger import get_logger
+                    logger = get_logger(__name__)
                     logger.warning(f"[A_Mind] 无法获取权限管理器，跳过权限检查: {permission_level}")
                     return await func(self, *args, **kwargs)
 
@@ -166,8 +169,11 @@ def require_permission(permission_level: str = "admin"):
 
                 if user_id is None:
                     # 如果无法获取用户ID，记录警告但允许执行
-                    from src.common.logger import get_logger
-                    logger = get_logger("A_Mind")
+                    try:
+                        from .amind_logger import get_logger
+                    except ImportError:
+                        from core.amind_logger import get_logger
+                    logger = get_logger(__name__)
                     logger.warning(f"[A_Mind] 无法获取用户ID，跳过权限检查: {permission_level}")
                     return await func(self, *args, **kwargs)
 
@@ -180,8 +186,11 @@ def require_permission(permission_level: str = "admin"):
 
             except Exception as e:
                 # 权限检查出错时记录错误但允许执行
-                from src.common.logger import get_logger
-                logger = get_logger("A_Mind")
+                try:
+                    from .amind_logger import get_logger
+                except ImportError:
+                    from core.amind_logger import get_logger
+                logger = get_logger(__name__)
                 logger.error(f"[A_Mind] 权限检查失败: {e}")
                 return await func(self, *args, **kwargs)
 

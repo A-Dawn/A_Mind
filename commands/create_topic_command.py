@@ -5,17 +5,28 @@ import re
 from typing import Tuple
 
 from src.plugin_system import BaseCommand, ComponentInfo, ComponentType, CommandInfo
-from src.common.logger import get_logger
 from ..core.permissions import require_permission
+
+# Logger import with fallback
+try:
+    from ..core.amind_logger import get_logger
+except ImportError:
+    from core.amind_logger import get_logger
 try:
     from ..models.topic import Topic
     from ..utils import get_global_db_manager
 except ImportError:
-    # 直接导入时使用绝对导入
-    from plugins.A_Mind.models.topic import Topic
-    from plugins.A_Mind.utils import get_global_db_manager
+    # 直接导入时的备用方案
+    import sys
+    from pathlib import Path
+    # 添加插件路径到sys.path
+    plugin_path = Path(__file__).parent.parent
+    if str(plugin_path) not in sys.path:
+        sys.path.insert(0, str(plugin_path))
+    from models.topic import Topic
+    from utils import get_global_db_manager
 
-logger = get_logger("A_Mind")
+logger = get_logger(__name__)
 
 
 class CreateTopicCommand(BaseCommand):
