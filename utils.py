@@ -16,6 +16,11 @@ def get_global_db_manager():
         try:
             from .repositories.database_manager import DatabaseManager
         except ImportError:
-            from plugins.A_Mind.repositories.database_manager import DatabaseManager
+            import sys
+            from pathlib import Path
+            plugin_path = Path(__file__).parent
+            if str(plugin_path) not in sys.path:
+                sys.path.insert(0, str(plugin_path))
+            from repositories.database_manager import DatabaseManager
         _db_manager_instance = DatabaseManager()
     return _db_manager_instance

@@ -8,6 +8,14 @@ import threading
 from typing import Optional
 from pathlib import Path
 
+# Logger import with fallback
+try:
+    from .core.amind_logger import get_logger
+except ImportError:
+    from core.amind_logger import get_logger
+
+logger = get_logger(__name__)
+
 # 数据库文件路径
 PLUGIN_DIR = Path(__file__).parent
 DATA_DIR = PLUGIN_DIR / "data"
@@ -175,10 +183,10 @@ def init_database():
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_amind_knowledge_category ON amind_knowledge(category)')
 
         conn.commit()
-        print(f"[A_Mind DB] 数据库初始化完成: {DB_PATH}")
+        logger.info(f"数据库初始化完成: {DB_PATH}")
 
     except Exception as e:
-        print(f"[A_Mind DB] 数据库初始化失败: {e}")
+        logger.error(f"数据库初始化失败: {e}")
         conn.rollback()
         raise
     finally:
@@ -223,7 +231,7 @@ def get_database_stats() -> dict:
         return stats
 
     except Exception as e:
-        print(f"[A_Mind DB] 获取统计信息失败: {e}")
+        logger.error(f"获取统计信息失败: {e}")
         return {}
     finally:
         cursor.close()

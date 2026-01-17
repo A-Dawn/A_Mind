@@ -6,17 +6,26 @@ import time
 from typing import Tuple
 
 from src.plugin_system import BaseCommand, ComponentInfo, ComponentType, CommandInfo
-from src.common.logger import get_logger
 from ..core.permissions import require_permission
+
+# Logger import with fallback
+try:
+    from ..core.amind_logger import get_logger
+except ImportError:
+    from core.amind_logger import get_logger
 try:
     from ..utils import get_global_db_manager
     from ..handlers.state_check_action import StateCheckAction
 except ImportError:
-    # 直接导入时使用绝对导入
-    from plugins.A_Mind.utils import get_global_db_manager
-    from plugins.A_Mind.handlers.state_check_action import StateCheckAction
+    import sys
+    from pathlib import Path
+    plugin_path = Path(__file__).parent.parent
+    if str(plugin_path) not in sys.path:
+        sys.path.insert(0, str(plugin_path))
+    from utils import get_global_db_manager
+    from handlers.state_check_action import StateCheckAction
 
-logger = get_logger("A_mind")
+logger = get_logger(__name__)
 
 
 class CheckCommand(BaseCommand):

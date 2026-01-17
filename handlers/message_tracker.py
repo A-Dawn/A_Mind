@@ -5,14 +5,19 @@ import time
 from typing import List, Optional
 
 from src.plugin_system import BaseEventHandler, EventType
-from src.common.logger import get_logger
 from src.plugin_system.apis import llm_api
-from src.plugin_system.apis.llm_api import get_available_models
-# 确保Topic和TopicReply被正确导入 - 强制使用绝对导入确保在所有环境下都能工作
-from plugins.A_Mind.models.topic import Topic, TopicReply
-from plugins.A_Mind.utils import get_global_db_manager
 
-logger = get_logger("A_Mind")
+# Logger import with fallback
+try:
+    from ..core.amind_logger import get_logger
+except ImportError:
+    from core.amind_logger import get_logger
+from src.plugin_system.apis.llm_api import get_available_models
+# 使用相对导入
+from ..models.topic import Topic, TopicReply
+from ..utils import get_global_db_manager
+
+logger = get_logger(__name__)
 
 
 class MessageTrackerEventHandler(BaseEventHandler):

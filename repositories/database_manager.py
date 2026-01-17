@@ -15,8 +15,12 @@ from pathlib import Path
 try:
     from ..database import get_db_connection, init_database
 except ImportError:
-    # 直接导入时使用绝对导入
-    from plugins.A_Mind.database import get_db_connection, init_database
+    import sys
+    from pathlib import Path
+    plugin_path = Path(__file__).parent.parent
+    if str(plugin_path) not in sys.path:
+        sys.path.insert(0, str(plugin_path))
+    from database import get_db_connection, init_database
 
 
 class DatabaseManager:

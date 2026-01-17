@@ -5,18 +5,29 @@ import time
 from typing import List, Dict, Any, Tuple, Optional
 
 from src.plugin_system import BaseAction, ActionActivationType
-from src.common.logger import get_logger
 from src.plugin_system.apis import llm_api
+
+# Logger import with fallback
+try:
+    from ..core.amind_logger import get_logger
+except ImportError:
+    from core.amind_logger import get_logger
 from src.plugin_system.apis.llm_api import get_available_models
 try:
     from ..utils import get_global_db_manager
     from ..models.topic import Topic
 except ImportError:
-    # 直接导入时使用绝对导入
-    from plugins.A_Mind.utils import get_global_db_manager
-    from plugins.A_Mind.models.topic import Topic
+    # 直接导入时的备用方案
+    import sys
+    from pathlib import Path
+    # 添加插件路径到sys.path
+    plugin_path = Path(__file__).parent.parent
+    if str(plugin_path) not in sys.path:
+        sys.path.insert(0, str(plugin_path))
+    from utils import get_global_db_manager
+    from models.topic import Topic
 
-logger = get_logger("A_Mind")
+logger = get_logger(__name__)
 
 
 class StateCheckAction(BaseAction):

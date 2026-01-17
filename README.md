@@ -176,6 +176,28 @@ fallback_topics = ["大家玩原神吗？"]
 
 > **💡 配置建议**：这些关键词和兜底话题可以根据你的群聊特点和用户兴趣进行调整。更多话题会让机器人更"懂"你的群友，但也会需要更多API调用。
 
+##### 配置关键词权重（新功能）
+通过调整不同类别关键词的权重，控制话题生成倾向：
+
+```toml
+[plan1.keyword_weights]
+# 启用手动权重（false则使用AI自动分析偏好）
+enable_manual_weights = true
+
+# 权重配置（0.0-1.0，不需要总和为1.0）
+tech_weight = 0.5        # 技术类 50%
+science_weight = 0.3      # 科学类 30%
+social_weight = 0.1       # 社会类 10%
+entertainment_weight = 0.1 # 娱乐类 10%
+```
+
+**使用场景示例**：
+- **技术群**：提高tech_weight到0.6，降低entertainment_weight到0.1
+- **娱乐群**：提高entertainment_weight到0.5，降低tech_weight到0.1
+- **均衡群**：保持默认值0.25（所有类别均衡）
+
+> **💡 提示**：也可通过 `/kw` 命令实时调整，无需重启插件。
+
 ### 🎯 启动测试
 
 1. 重启MaiBot
@@ -193,9 +215,14 @@ fallback_topics = ["大家玩原神吗？"]
 | `/amind_help` | 显示帮助信息 | - |
 | `/amind_list` | 查看当前活跃话题 | - |
 | `/amind_check` | 检查话题状态 | `/amind_check 话题ID` |
-| `/amind_create` | 创建新话题 | `/amind_create 标题:描述` |
+| `/amind_create` | 创建新话题 | `/amind_create 标题 描述` |
 | `/amind_initiate` | 手动发起话题 | `/amind_initiate` |
 | `/amind_models` | 查看模型配置 | `/amind_models all` |
+| `/kw show [plan]` | 查看关键词权重 | `/kw show plan1` |
+| `/kw set [plan] <参数>` | 设置关键词权重 | `/kw set plan1 tech=0.5` |
+| `/kw enable [plan]` | 启用手动权重 | `/kw enable plan1` |
+| `/kw disable [plan]` | 启用自动偏好 | `/kw disable plan1` |
+| `/kw reset [plan]` | 重置权重为默认 | `/kw reset plan1` |
 
 ### 🎪 自动功能
 
@@ -233,19 +260,68 @@ fallback_topics = ["大家玩原神吗？"]
 
 ## 📝 版本信息
 
-### 🎯 0.1.0 (当前版本)
+### 🎯 0.2.0 (2025-01-13) - 当前版本
+
+#### ✨ 新增功能
+- ✅ **关键词权重管理** - 支持手动配置各类关键词权重，精确控制话题类型倾向
+- ✅ **关键词轮询机制** - 优化关键词选择逻辑，确保所有关键词都能被均匀使用
+- ✅ **日志系统优化** - 统一使用logger系统，所有日志可通过配置灵活控制
+
+#### 🔧 改进优化
+- 🔧 修复关键词只使用前3个的Bug，现在所有配置的关键词都会被轮询使用
+- 🔧 提供细粒度日志控制（core/handlers/services/database模块独立配置）
+- 🔧 日志级别分类更合理（DEBUG/INFO/WARNING/ERROR）
+
+#### 📝 新增命令
+- `/kw show [plan]` - 查看当前权重配置
+- `/kw set [plan] <参数>` - 设置关键词权重
+- `/kw enable [plan]` - 启用手动权重模式
+- `/kw disable [plan]` - 启用自动偏好分析
+- `/kw reset [plan]` - 重置权重为默认值
+
+#### 📖 配置变更
+```toml
+# 新增关键词权重配置
+[plan1.keyword_weights]
+enable_manual_weights = false
+tech_weight = 0.25
+science_weight = 0.25
+social_weight = 0.25
+entertainment_weight = 0.25
+
+# 新增日志控制配置
+[logging]
+preset = "normal"  # minimal/normal/verbose/debug
+level = "INHERIT"
+
+[logging.modules]
+core = "INHERIT"
+handlers = "INHERIT"
+services = "INHERIT"
+commands = "INHERIT"
+database = "INHERIT"
+```
+
+#### 🐛 修复问题
+- 🐛 修复关键词池中只有前3个关键词被使用的Bug
+- 🐛 修复日志输出混乱、难以控制的问题
+
+---
+
+### 🎯 0.1.0 (2024-12-XX)
 - ✅ 基础话题管理功能
 - ✅ 自动发起和状态检查
 - ✅ 权限控制系统
 - ✅ 多源内容整合
-- 🚧 高级统计功能（开发中）
-- 🚧 性能优化（开发中）
+- ✅ 多层模型配置系统
+
+---
 
 ### 🔄 未来规划
-- 更智能的话题推荐算法
-- 自定义话题模板
-- 跨平台话题同步
-- 详细的使用统计
+- 🚧 更智能的话题推荐算法
+- 🚧 自定义话题模板
+- 🚧 跨平台话题同步
+- 🚧 详细的使用统计和可视化面板
 
 ---
 

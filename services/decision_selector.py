@@ -8,12 +8,20 @@ from typing import List, Dict, Any, Optional
 try:
     from ..models.brainstorm import BrainstormTopic, DecisionResult
 except ImportError:
-    # 直接导入时使用绝对导入
-    from plugins.A_Mind.models.brainstorm import BrainstormTopic, DecisionResult
-# ConfigManager will be injected
-from src.common.logger import get_logger
+    import sys
+    from pathlib import Path
+    plugin_path = Path(__file__).parent.parent
+    if str(plugin_path) not in sys.path:
+        sys.path.insert(0, str(plugin_path))
+    from models.brainstorm import BrainstormTopic, DecisionResult
 
-logger = get_logger("A_Mind")
+# Logger import with fallback
+try:
+    from ..core.amind_logger import get_logger
+except ImportError:
+    from core.amind_logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class DecisionSelector:

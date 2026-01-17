@@ -10,14 +10,23 @@ try:
     from ..models.brainstorm import BrainstormTopic
     from ..models.search import SearchResult, KnowledgeItem
 except ImportError:
-    # 直接导入时使用绝对导入
-    from plugins.A_Mind.models.brainstorm import BrainstormTopic
-    from plugins.A_Mind.models.search import SearchResult, KnowledgeItem
-# ConfigManager will be injected
-from src.common.logger import get_logger
+    # 直接导入时的备用方案
+    import sys
+    from pathlib import Path
+    plugin_path = Path(__file__).parent.parent
+    if str(plugin_path) not in sys.path:
+        sys.path.insert(0, str(plugin_path))
+    from models.brainstorm import BrainstormTopic
+    from models.search import SearchResult, KnowledgeItem
+
+# Logger import with fallback
+try:
+    from ..core.amind_logger import get_logger
+except ImportError:
+    from core.amind_logger import get_logger
 from src.config.config import global_config
 
-logger = get_logger("A_Mind")
+logger = get_logger(__name__)
 
 
 class BrainstormGenerator:

@@ -5,19 +5,30 @@ from pathlib import Path
 from typing import List
 
 from src.plugin_system import BaseEventHandler, EventType
-from src.common.logger import get_logger
 from src.manager.async_task_manager import async_task_manager
+
+# Logger import with fallback
+try:
+    from ..core.amind_logger import get_logger
+except ImportError:
+    from core.amind_logger import get_logger
 try:
     from ..handlers.auto_initiate_action import AutoInitiateAction
     from ..services.auto_sender import AutoSender
     from ..core.a_mind_plan_tick_task import AMindPlanTickTask
 except ImportError:
-    # 直接导入时使用绝对导入
-    from plugins.A_Mind.handlers.auto_initiate_action import AutoInitiateAction
-    from plugins.A_Mind.services.auto_sender import AutoSender
-    from plugins.A_Mind.core.a_mind_plan_tick_task import AMindPlanTickTask
+    # 直接导入时的备用方案
+    import sys
+    from pathlib import Path
+    # 添加插件路径到sys.path
+    plugin_path = Path(__file__).parent.parent
+    if str(plugin_path) not in sys.path:
+        sys.path.insert(0, str(plugin_path))
+    from handlers.auto_initiate_action import AutoInitiateAction
+    from services.auto_sender import AutoSender
+    from core.a_mind_plan_tick_task import AMindPlanTickTask
 
-logger = get_logger("A_Mind")
+logger = get_logger(__name__)
 
 
 class AMindStartHandler(BaseEventHandler):
@@ -34,10 +45,10 @@ class AMindStartHandler(BaseEventHandler):
             try:
                 for k in keys:
                     current = current[k]
-                print(f"[A_mind DEBUG] Found {key} in plugin_config: {current}")
+                logger.debug(f"Found {key} in plugin_config: {current}")
                 return current
             except (KeyError, TypeError) as e:
-                print(f"[A_mind DEBUG] {key} not found in plugin_config: {e}")
+                logger.debug(f"{key} not found in plugin_config: {e}")
                 pass
 
         # 如果plugin_config不可用，尝试直接读取config.toml文件
@@ -50,13 +61,13 @@ class AMindStartHandler(BaseEventHandler):
                 current = config
                 for k in keys:
                     current = current[k]
-                print(f"[A_mind DEBUG] Found {key} in config.toml: {current}")
+                logger.debug(f"Found {key} in config.toml: {current}")
                 return current
         except Exception as e:
-            print(f"[A_mind DEBUG] Error reading config.toml for {key}: {e}")
+            logger.debug(f"Error reading config.toml for {key}: {e}")
             pass
 
-        print(f"[A_mind DEBUG] Using default for {key}: {default}")
+        logger.debug(f"Using default for {key}: {default}")
         return default
 
     def _get_available_plans(self) -> List[str]:
@@ -156,7 +167,7 @@ class AMindStartHandler(BaseEventHandler):
 
                     # 设置container引用，使服务能够从依赖注入容器正确初始化
                     try:
-                        from plugins.A_Mind.plugin import _plugin_instance
+                        from ..plugin import _plugin_instance
                         if _plugin_instance and hasattr(_plugin_instance, 'container'):
                             auto_initiate.container = _plugin_instance.container
                         else:
@@ -167,6 +178,15 @@ class AMindStartHandler(BaseEventHandler):
 
                                 def get(self, key, default=None):
                                     return self._get_config(key, default)
+
+                                def get_model_config(self, plan_name=None, service_name=None):
+                                    """获取模型配置"""
+                                    return {
+                                        "model_name": self.get("llm.model_name", "tool_use"),
+                                        "fallback_model_name": self.get("llm.fallback_model_name", "tool_use"),
+                                        "temperature": self.get("llm.temperature", 0.7),
+                                        "max_tokens": self.get("llm.max_tokens", 1500),
+                                    }
 
                             auto_initiate.config_manager = ConfigManager(self.get_config)
                     except Exception:

@@ -9,12 +9,21 @@ try:
     from ..models.metrics import EngagementMetrics, MonitoringResult
     from ..database import get_db_connection
 except ImportError:
-    # 直接导入时使用绝对导入
-    from plugins.A_Mind.models.metrics import EngagementMetrics, MonitoringResult
-    from plugins.A_Mind.database import get_db_connection
-from src.common.logger import get_logger
+    import sys
+    from pathlib import Path
+    plugin_path = Path(__file__).parent.parent
+    if str(plugin_path) not in sys.path:
+        sys.path.insert(0, str(plugin_path))
+    from models.metrics import EngagementMetrics, MonitoringResult
+    from database import get_db_connection
 
-logger = get_logger("A_mind")
+# Logger import with fallback
+try:
+    from ..core.amind_logger import get_logger
+except ImportError:
+    from core.amind_logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class ResponseMonitor:

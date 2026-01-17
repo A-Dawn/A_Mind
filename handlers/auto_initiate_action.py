@@ -7,22 +7,28 @@
 from __future__ import annotations
 
 import time
+import random
 from typing import Any, Dict, List, Optional, Tuple
 
-from src.common.logger import get_logger
 from src.plugin_system import ActionActivationType, BaseAction
 
-# 强制使用绝对导入确保在所有环境下都能工作
-from plugins.A_Mind.models.auto_send import AutoSendRequest
-from plugins.A_Mind.models.topic import Topic, TopicReply  # noqa: F401  (TopicReply 可能在运行时使用)
-from plugins.A_Mind.services.auto_sender import AutoSender
-from plugins.A_Mind.services.brainstorm_generator import BrainstormGenerator
-from plugins.A_Mind.services.decision_selector import DecisionSelector
-from plugins.A_Mind.services.information_retriever import InformationRetriever
-from plugins.A_Mind.services.response_monitor import ResponseMonitor
-from plugins.A_Mind.utils import get_global_db_manager
+# Logger import with fallback
+try:
+    from ..core.amind_logger import get_logger
+except ImportError:
+    from core.amind_logger import get_logger
 
-logger = get_logger("A_mind")
+# 使用相对导入，避免硬编码插件路径
+from ..models.auto_send import AutoSendRequest
+from ..models.topic import Topic, TopicReply  # noqa: F401  (TopicReply 可能在运行时使用)
+from ..services.auto_sender import AutoSender
+from ..services.brainstorm_generator import BrainstormGenerator
+from ..services.decision_selector import DecisionSelector
+from ..services.information_retriever import InformationRetriever
+from ..services.response_monitor import ResponseMonitor
+from ..utils import get_global_db_manager
+
+logger = get_logger(__name__)
 
 
 class AutoInitiateAction(BaseAction):
@@ -37,6 +43,9 @@ class AutoInitiateAction(BaseAction):
         "满足自发起条件时自动执行",
     ]
     associated_types = ["system"]
+
+    # 类变量：关键词轮询索引（支持多plan）
+    _keyword_indices: Dict[str, int] = {}
 
     def __init__(self, *args, plan_name: str = None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -64,7 +73,7 @@ class AutoInitiateAction(BaseAction):
                     self._info_retriever = self.container.information_retriever
                 else:
                     # 从全局插件实例获取
-                    from plugins.A_Mind.plugin import _plugin_instance  # pylint: disable=import-error
+                    from ..plugin import _plugin_instance  # pylint: disable=import-error
 
                     if _plugin_instance and hasattr(_plugin_instance, "container"):
                         self._info_retriever = _plugin_instance.container.information_retriever
@@ -79,6 +88,15 @@ class AutoInitiateAction(BaseAction):
                                 }
                                 return defaults.get(key, default)
 
+                            def get_model_config(self, plan_name=None, service_name=None):
+                                """获取模型配置"""
+                                return {
+                                    "model_name": "tool_use",
+                                    "fallback_model_name": "tool_use",
+                                    "temperature": 0.7,
+                                    "max_tokens": 1500,
+                                }
+
                         self._info_retriever = InformationRetriever(BasicConfigManager())
             except Exception:
                 # 最后的备用方案
@@ -90,6 +108,15 @@ class AutoInitiateAction(BaseAction):
                             "internet_search.max_results": 5,
                         }
                         return defaults.get(key, default)
+
+                    def get_model_config(self, plan_name=None, service_name=None):
+                        """获取模型配置"""
+                        return {
+                            "model_name": "tool_use",
+                            "fallback_model_name": "tool_use",
+                            "temperature": 0.7,
+                            "max_tokens": 1500,
+                        }
 
                 self._info_retriever = InformationRetriever(BasicConfigManager())
         return self._info_retriever
@@ -104,7 +131,7 @@ class AutoInitiateAction(BaseAction):
                 elif hasattr(self, "container") and getattr(self, "container", None):
                     self._brainstorm_generator = self.container.get_brainstorm_generator(self.plan_name)
                 else:
-                    from plugins.A_Mind.plugin import _plugin_instance  # pylint: disable=import-error
+                    from ..plugin import _plugin_instance  # pylint: disable=import-error
 
                     if _plugin_instance and hasattr(_plugin_instance, "container"):
                         self._brainstorm_generator = _plugin_instance.container.get_brainstorm_generator(self.plan_name)
@@ -118,6 +145,15 @@ class AutoInitiateAction(BaseAction):
                                 }
                                 return defaults.get(key, default)
 
+                            def get_model_config(self, plan_name=None, service_name=None):
+                                """获取模型配置"""
+                                return {
+                                    "model_name": self.get("llm.model_name", "tool_use"),
+                                    "fallback_model_name": "tool_use",
+                                    "temperature": self.get("llm.temperature", 0.7),
+                                    "max_tokens": self.get("llm.max_tokens", 1500),
+                                }
+
                         self._brainstorm_generator = BrainstormGenerator(BasicConfigManager(), self.plan_name)
             except Exception:
                 class BasicConfigManager:
@@ -128,6 +164,15 @@ class AutoInitiateAction(BaseAction):
                             "llm.max_tokens": 1500,
                         }
                         return defaults.get(key, default)
+
+                    def get_model_config(self, plan_name=None, service_name=None):
+                        """获取模型配置"""
+                        return {
+                            "model_name": self.get("llm.model_name", "tool_use"),
+                            "fallback_model_name": "tool_use",
+                            "temperature": self.get("llm.temperature", 0.7),
+                            "max_tokens": self.get("llm.max_tokens", 1500),
+                        }
 
                 self._brainstorm_generator = BrainstormGenerator(BasicConfigManager(), self.plan_name)
         return self._brainstorm_generator
@@ -142,7 +187,7 @@ class AutoInitiateAction(BaseAction):
                 elif hasattr(self, "container") and getattr(self, "container", None):
                     self._decision_selector = self.container.get_decision_selector(self.plan_name)
                 else:
-                    from plugins.A_Mind.plugin import _plugin_instance  # pylint: disable=import-error
+                    from ..plugin import _plugin_instance  # pylint: disable=import-error
 
                     if _plugin_instance and hasattr(_plugin_instance, "container"):
                         self._decision_selector = _plugin_instance.container.get_decision_selector(self.plan_name)
@@ -156,6 +201,15 @@ class AutoInitiateAction(BaseAction):
                                 }
                                 return defaults.get(key, default)
 
+                            def get_model_config(self, plan_name=None, service_name=None):
+                                """获取模型配置"""
+                                return {
+                                    "model_name": self.get("llm.model_name", "tool_use"),
+                                    "fallback_model_name": "tool_use",
+                                    "temperature": self.get("llm.temperature", 0.7),
+                                    "max_tokens": self.get("llm.max_tokens", 1500),
+                                }
+
                         self._decision_selector = DecisionSelector(BasicConfigManager(), self.plan_name)
             except Exception:
                 class BasicConfigManager:
@@ -166,6 +220,15 @@ class AutoInitiateAction(BaseAction):
                             "llm.max_tokens": 1500,
                         }
                         return defaults.get(key, default)
+
+                    def get_model_config(self, plan_name=None, service_name=None):
+                        """获取模型配置"""
+                        return {
+                            "model_name": self.get("llm.model_name", "tool_use"),
+                            "fallback_model_name": "tool_use",
+                            "temperature": self.get("llm.temperature", 0.7),
+                            "max_tokens": self.get("llm.max_tokens", 1500),
+                        }
 
                 self._decision_selector = DecisionSelector(BasicConfigManager(), self.plan_name)
         return self._decision_selector
@@ -178,7 +241,7 @@ class AutoInitiateAction(BaseAction):
                 if hasattr(self, "container") and getattr(self, "container", None):
                     self._auto_sender = self.container.auto_sender
                 else:
-                    from plugins.A_Mind.plugin import _plugin_instance  # pylint: disable=import-error
+                    from ..plugin import _plugin_instance  # pylint: disable=import-error
 
                     if _plugin_instance and hasattr(_plugin_instance, "container"):
                         self._auto_sender = _plugin_instance.container.auto_sender
@@ -196,7 +259,7 @@ class AutoInitiateAction(BaseAction):
                 if hasattr(self, "container") and getattr(self, "container", None):
                     self._response_monitor = self.container.response_monitor
                 else:
-                    from plugins.A_Mind.plugin import _plugin_instance  # pylint: disable=import-error
+                    from ..plugin import _plugin_instance  # pylint: disable=import-error
 
                     if _plugin_instance and hasattr(_plugin_instance, "container"):
                         self._response_monitor = _plugin_instance.container.response_monitor
@@ -597,8 +660,12 @@ class AutoInitiateAction(BaseAction):
             if not search_queries:
                 return False, "无可用搜索关键词"
 
+            # 使用轮询或随机方式选择关键词，确保所有关键词都能被使用
+            selected_queries = self._select_keywords_with_rotation(search_queries)
+            logger.debug(f"[A_mind] 本次选择的关键词: {selected_queries}")
+
             search_results = []
-            for query in search_queries[:3]:
+            for query in selected_queries:
                 try:
                     results = await self.info_retriever.search_internet(query, max_results=3)
                     search_results.extend(results)
@@ -699,6 +766,49 @@ class AutoInitiateAction(BaseAction):
     # -------------------------
     # Preference-based keywords
     # -------------------------
+    def _select_keywords_with_rotation(self, all_keywords: List[str]) -> List[str]:
+        """选择关键词（轮询机制，确保所有关键词都能被使用）
+
+        Args:
+            all_keywords: 所有可选关键词列表
+
+        Returns:
+            本次选中的3个关键词
+        """
+        try:
+            if not all_keywords:
+                return []
+
+            # 确定当前plan的索引键
+            plan_key = self.plan_name or "default"
+
+            # 获取或初始化轮询索引
+            if plan_key not in self._keyword_indices:
+                self._keyword_indices[plan_key] = 0
+
+            # 获取当前索引
+            current_index = self._keyword_indices[plan_key]
+            keyword_count = len(all_keywords)
+            keywords_per_batch = 3
+
+            # 轮询选择关键词
+            selected = []
+            for i in range(keywords_per_batch):
+                idx = (current_index + i) % keyword_count
+                selected.append(all_keywords[idx])
+
+            # 更新索引（移动3位）
+            self._keyword_indices[plan_key] = (current_index + keywords_per_batch) % keyword_count
+
+            logger.debug(f"[A_mind] 关键词轮询: plan={plan_key}, 索引={current_index}→{self._keyword_indices[plan_key]}, 选中={len(selected)}个")
+
+            return selected
+
+        except Exception as e:
+            logger.warning(f"关键词轮询选择失败，使用随机选择: {e}")
+            # 降级方案：随机选择
+            return random.sample(all_keywords, min(3, len(all_keywords))) if all_keywords else []
+
     def _get_adaptive_search_queries(self, stream_id: str = None) -> List[str]:
         """获取自适应搜索关键词（支持聊天流个性化）"""
         try:
@@ -813,32 +923,54 @@ class AutoInitiateAction(BaseAction):
             return {"tech": 0.2, "science": 0.2, "social": 0.3, "entertainment": 0.3}
 
     def _adapt_keywords_by_preferences(self, base_keywords: List[str], preferences: Dict[str, float]) -> List[str]:
-        """根据偏好调整关键词池"""
+        """根据偏好调整关键词池（支持手动权重覆盖）"""
         try:
             tech_keywords = self.get_config("auto_initiate.tech_keywords", [])
             science_keywords = self.get_config("auto_initiate.science_keywords", [])
             social_keywords = self.get_config("auto_initiate.social_keywords", [])
             entertainment_keywords = self.get_config("auto_initiate.entertainment_keywords", [])
 
+            # 检查是否启用手动权重
+            enable_manual = self.get_config(f"{self.plan_name}.keyword_weights.enable_manual_weights", False)
+
+            if enable_manual:
+                # 使用手动配置的权重
+                tech_weight = self.get_config(f"{self.plan_name}.keyword_weights.tech_weight", 0.25)
+                science_weight = self.get_config(f"{self.plan_name}.keyword_weights.science_weight", 0.25)
+                social_weight = self.get_config(f"{self.plan_name}.keyword_weights.social_weight", 0.25)
+                entertainment_weight = self.get_config(f"{self.plan_name}.keyword_weights.entertainment_weight", 0.25)
+
+                logger.info(f"[A_Mind] 使用手动权重: tech={tech_weight}, science={science_weight}, social={social_weight}, entertainment={entertainment_weight}")
+            else:
+                # 使用自动分析的偏好
+                tech_weight = float(preferences.get("tech", 0.25))
+                science_weight = float(preferences.get("science", 0.25))
+                social_weight = float(preferences.get("social", 0.25))
+                entertainment_weight = float(preferences.get("entertainment", 0.25))
+
+                logger.debug(f"[A_Mind] 使用自动偏好: tech={tech_weight:.2f}, science={science_weight:.2f}, social={social_weight:.2f}, entertainment={entertainment_weight:.2f}")
+
             result_keywords: List[str] = []
             target_count = max(len(base_keywords), 1)
 
-            tech_weight = float(preferences.get("tech", 0.25))
-            tech_count = max(1, int(target_count * tech_weight * 0.8))
-            result_keywords.extend(list(tech_keywords)[:tech_count])
+            # 根据权重选择关键词
+            tech_count = max(0, int(target_count * tech_weight))
+            if tech_count > 0 and tech_keywords:
+                result_keywords.extend(list(tech_keywords)[:tech_count])
 
-            science_weight = float(preferences.get("science", 0.25))
-            science_count = max(1, int(target_count * science_weight * 0.8))
-            result_keywords.extend(list(science_keywords)[:science_count])
+            science_count = max(0, int(target_count * science_weight))
+            if science_count > 0 and science_keywords:
+                result_keywords.extend(list(science_keywords)[:science_count])
 
-            social_weight = float(preferences.get("social", 0.25))
-            social_count = max(1, int(target_count * social_weight * 0.8))
-            result_keywords.extend(list(social_keywords)[:social_count])
+            social_count = max(0, int(target_count * social_weight))
+            if social_count > 0 and social_keywords:
+                result_keywords.extend(list(social_keywords)[:social_count])
 
-            entertainment_weight = float(preferences.get("entertainment", 0.25))
-            entertainment_count = max(1, int(target_count * entertainment_weight * 0.8))
-            result_keywords.extend(list(entertainment_keywords)[:entertainment_count])
+            entertainment_count = max(0, int(target_count * entertainment_weight))
+            if entertainment_count > 0 and entertainment_keywords:
+                result_keywords.extend(list(entertainment_keywords)[:entertainment_count])
 
+            # 如果分类关键词不足，用基础关键词补充
             if len(result_keywords) < target_count:
                 remaining = target_count - len(result_keywords)
                 result_keywords.extend(list(base_keywords)[:remaining])
@@ -851,9 +983,10 @@ class AutoInitiateAction(BaseAction):
                     continue
                 deduped.append(kw)
                 seen.add(kw)
-                if len(deduped) >= target_count:
+                if len(dedup) >= target_count:
                     break
 
+            logger.debug(f"[A_Mind] 关键词调整完成: 从{len(base_keywords)}个基础关键词扩展到{len(deduped)}个")
             return deduped
 
         except Exception as e:
