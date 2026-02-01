@@ -544,3 +544,43 @@ class DatabaseManager:
             raise e
         finally:
             conn.close()
+
+    def get_meta(self, key: str, default: str = None) -> Optional[str]:
+        """获取元数据"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute("SELECT value FROM amind_meta WHERE key = ?", (key,))
+            row = cursor.fetchone()
+            return row["value"] if row else default
+        except Exception as e:
+            conn.close() # Ensure connection is closed on error
+            # 记录错误但不要抛出，以免影响主流程
+            return default
+        finally:
+            conn.close()
+
+    def set_meta(self, key: str, value: str) -> bool:
+        """设置元数据"""
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        try:
+            cursor.execute(
+                """
+                INSERT INTO amind_meta (key, value, updated_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                value = excluded.value,
+                updated_at = excluded.updated_at
+            """,
+                (key, str(value), time.time()),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+        except Exception as e:
+            conn.rollback()
+            return False
+        finally:
+            conn.close()
