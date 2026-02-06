@@ -135,63 +135,96 @@ class InformationRetriever:
             return []
 
     async def _search_tavily(self, query: str, max_results: int = 5) -> List[SearchResult]:
-        """使用Tavily进行搜索"""
+        """使用Tavily进行搜索（支持多Key轮询）"""
         try:
-            api_key = self.config.get("internet_search.tavily_api_key", "")
-            if not api_key:
+            api_keys_config = self.config.get("internet_search.tavily_api_key", "")
+            
+            # 统一处理配置格式：可能是字符串或列表
+            api_keys: List[str] = []
+            if isinstance(api_keys_config, str):
+                if api_keys_config.strip():
+                     api_keys = [api_keys_config.strip()]
+            elif isinstance(api_keys_config, list):
+                api_keys = [str(k).strip() for k in api_keys_config if str(k).strip()]
+            
+            if not api_keys:
                 logger.warning("[A_Mind] Tavily API密钥未配置，跳过Tavily搜索")
                 return []
 
             base_url = self.config.get("internet_search.tavily_base_url", "https://api.tavily.com")
+            
+            # 尝试轮询所有 Key
+            last_error = None
+            for key_index, api_key in enumerate(api_keys):
+                try:
+                    # logger.debug(f"[A_Mind] 尝试使用 Tavily Key #{key_index + 1}...") # 避免打印 Key
+                    
+                    # 构建请求
+                    payload = {
+                        "api_key": api_key,
+                        "query": query,
+                        "search_depth": "advanced",
+                        "include_images": False,
+                        "include_answer": False,
+                        "include_raw_content": False,
+                        "max_results": max_results,
+                        "include_domains": [],
+                        "exclude_domains": [],
+                    }
 
-            # 构建请求
-            payload = {
-                "api_key": api_key,
-                "query": query,
-                "search_depth": "advanced",
-                "include_images": False,
-                "include_answer": False,
-                "include_raw_content": False,
-                "max_results": max_results,
-                "include_domains": [],
-                "exclude_domains": [],
-            }
+                    headers = {"Content-Type": "application/json"}
 
-            headers = {"Content-Type": "application/json"}
-
-            response = await asyncio.get_event_loop().run_in_executor(
-                None, lambda: self.session.post(f"{base_url}/search", json=payload, headers=headers, timeout=15)
-            )
-
-            if response.status_code != 200:
-                logger.error(f"[A_Mind] Tavily搜索请求失败: {response.status_code}")
-                return []
-
-            data = response.json()
-            results = []
-
-            # 解析Tavily响应
-            for item in data.get("results", [])[:max_results]:
-                title = item.get("title", "")
-                url = item.get("url", "")
-                content = item.get("content", "")
-
-                if title and url:
-                    results.append(
-                        SearchResult(
-                            title=title,
-                            url=url,
-                            snippet=content[:200],  # 限制摘要长度
-                            source="Tavily",
-                            relevance_score=0.9,  # Tavily结果质量较高
-                        )
+                    response = await asyncio.get_event_loop().run_in_executor(
+                        None, lambda: self.session.post(f"{base_url}/search", json=payload, headers=headers, timeout=15)
                     )
 
-            logger.info(f"[A_Mind] Tavily搜索完成，找到{len(results)}个结果")
-            return results
+                    if response.status_code == 200:
+                         data = response.json()
+                         results = []
+
+                         # 解析Tavily响应
+                         for item in data.get("results", [])[:max_results]:
+                             title = item.get("title", "")
+                             url = item.get("url", "")
+                             content = item.get("content", "")
+
+                             if title and url:
+                                 results.append(
+                                     SearchResult(
+                                         title=title,
+                                         url=url,
+                                         snippet=content[:200],  # 限制摘要长度
+                                         source="Tavily",
+                                         relevance_score=0.9,  # Tavily结果质量较高
+                                     )
+                                 )
+
+                         logger.info(f"[A_Mind] Tavily搜索完成 (使用Key #{key_index + 1})，找到{len(results)}个结果")
+                         return results
+                    
+                    # 如果是认证错误或额度错误，尝试下一个 Key
+                    elif response.status_code in [401, 403, 429]:
+                        logger.warning(f"[A_Mind] Tavily Key #{key_index + 1} 请求失败 (Status: {response.status_code})，尝试下一个 Key...")
+                        last_error = f"Status: {response.status_code}"
+                        continue
+                    
+                    else:
+                        logger.error(f"[A_Mind] Tavily搜索请求失败: {response.status_code}")
+                        last_error = f"Status: {response.status_code}"
+                        # 其他错误可能不需要重试，但为了稳健继续尝试下一个也无妨，或者直接返回
+                        # 这里选择继续尝试，以防万一
+                        continue
+
+                except Exception as loop_e:
+                    logger.warning(f"[A_Mind] Tavily Key #{key_index + 1} 发生异常: {loop_e}")
+                    last_error = str(loop_e)
+                    continue
+
+            logger.error(f"[A_Mind] 所有 Tavily Key 均尝试失败。最后错误: {last_error}")
+            return []
 
         except Exception as e:
-            logger.error(f"[A_Mind] Tavily搜索失败: {e}")
+            logger.error(f"[A_Mind] Tavily搜索逻辑异常: {e}")
             return []
 
     async def _search_searxng(self, query: str, max_results: int = 5) -> List[SearchResult]:

@@ -1,7 +1,5 @@
 """
-重构后的A_Mind插件主文件
-
-使用新的模块化架构
+A_Mind插件主文件
 """
 
 import asyncio
@@ -342,6 +340,10 @@ class AMindPlugin(BasePlugin):
             ),
             "auto_initiate_interval_hours": ConfigField(type=int, default=24, description="自发起检查间隔（小时）"),
             "auto_initiate_max_attempts": ConfigField(type=int, default=3, description="单个话题最大自发起次数"),
+            # 免打扰设置
+            "dnd_enabled": ConfigField(type=bool, default=False, description="是否启用免打扰模式"),
+            "dnd_start_time": ConfigField(type=str, default="23:00", description="免打扰开始时间 (HH:MM)"),
+            "dnd_end_time": ConfigField(type=str, default="08:00", description="免打扰结束时间 (HH:MM)"),
         },
         "matching": {
             "similarity_threshold": ConfigField(type=float, default=0.6, description="LLM匹配相似度阈值"),
@@ -404,12 +406,18 @@ class AMindPlugin(BasePlugin):
             "fallback_topic_probability": ConfigField(
                 type=float, default=0.0, description="使用兜底话题的概率（0.0-1.0），用于增加话题多样性"
             ),
+            "exploration_epsilon": ConfigField(
+                type=float, default=0.2, description="探索因子：以该概率忽略历史偏好，进行随机探索 (0.0 - 1.0)"
+            ),
+            "enable_dynamic_queries": ConfigField(
+                type=bool, default=True, description="启用动态查询生成：使用LLM将宽泛关键词转化为具体时效性查询"
+            ),
         },
         "internet_search": {
             "engine": ConfigField(
                 type=str, default="tavily", description="搜索引擎选择：tavily/duckduckgo/searxng"
             ),
-            "tavily_api_key": ConfigField(type=str, default="", description="Tavily API密钥"),
+            "tavily_api_key": ConfigField(type=list, default=[], description="Tavily API密钥 (支持单个字符串或密钥列表)"),
             "tavily_base_url": ConfigField(type=str, default="https://api.tavily.com", description="Tavily API基础URL"),
             "searxng_base_url": ConfigField(type=str, default="", description="SearXNG实例URL"),
             "timeout": ConfigField(type=int, default=15, description="搜索请求超时时间（秒）"),
@@ -428,6 +436,20 @@ class AMindPlugin(BasePlugin):
             "tick_interval_seconds": ConfigField(type=int, default=120, description="Plan-1：tick 周期（秒）"),
             "trigger_probability": ConfigField(type=float, default=0.2, description="Plan-1：每 tick 触发概率（0-1）"),
             "cooldown_seconds": ConfigField(type=int, default=1800, description="Plan-1：触发冷却（秒）"),
+            "topic_capture": {
+                "enabled": ConfigField(
+                    type=bool, default=False, description="Plan-1：是否启用话题捕捉"
+                ),
+                "probability": ConfigField(
+                    type=float, default=0.5, description="Plan-1：话题捕捉触发概率 (0.0-1.0)"
+                ),
+                "interval": ConfigField(
+                    type=int, default=600, description="Plan-1：话题捕捉冷却时间（秒）"
+                ),
+                "min_messages": ConfigField(
+                    type=int, default=5, description="Plan-1：触发捕捉所需的最小上下文消息数"
+                ),
+            },
         },
         "plan2": {
             "enabled": ConfigField(

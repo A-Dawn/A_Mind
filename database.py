@@ -147,6 +147,15 @@ def init_database():
             )
         ''')
 
+        # 创建元数据表（用于存储上次执行时间等系统状态）
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS amind_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT,
+                updated_at REAL DEFAULT 0
+            )
+        ''')
+
         # 创建权限配置表
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS permissions (

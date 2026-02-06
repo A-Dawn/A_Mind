@@ -656,7 +656,7 @@ class AutoInitiateAction(BaseAction):
         try:
             logger.info("[A_mind] 执行创建型自发起")
 
-            search_queries = self._get_adaptive_search_queries()
+            search_queries = await self._get_adaptive_search_queries()
             if not search_queries:
                 return False, "无可用搜索关键词"
 
@@ -675,17 +675,47 @@ class AutoInitiateAction(BaseAction):
             if not search_results:
                 return False, "信息检索失败"
 
-            best_result = max(search_results, key=lambda r: getattr(r, "relevance_score", 0.0))
+            # ------------------------------------------------------------------
+            # Strategy 3: Unified Creation Pipeline
+            # 使用完整的 头脑风暴 -> 决策选择 -> 话题创建 流程
+            # ------------------------------------------------------------------
+            
+            # 1. 构造上下文
+            context_data = {
+                "topic_title": "新建话题",  # 占位符
+                "topic_description": "基于搜索结果创建新话题",
+                "internet_results": search_results,
+                "knowledge_results": [],
+                "reply_count": 0,
+                "engagement_score": 0,
+                "last_activity_hours": 0,
+            }
 
+            # 2. 头脑风暴
+            brainstorm_topics = await self.brainstorm_generator.generate_topics(context_data, num_topics=3)
+            if not brainstorm_topics:
+                 return False, "头脑风暴生成话题失败"
+
+            # 3. 决策选择
+            decision_result = await self.decision_selector.select_best_topic(brainstorm_topics, context_data)
+            if not getattr(decision_result, "selected_topic", None):
+                 return False, "决策选择话题失败"
+
+            selected_topic_data = decision_result.selected_topic
+            logger.info(f"[A_mind] 选中话题建议: {selected_topic_data.title} (置信度: {decision_result.confidence_score})")
+
+            # 4. 创建话题对象
             topic = Topic(
-                title=best_result.title,
-                description=best_result.snippet,
+                title=selected_topic_data.title,
+                description=selected_topic_data.description,
                 creator_id="auto_system",
                 creator_name="自动系统",
                 status="active",
                 priority=1,
                 visibility="public",
+                # category=selected_topic_data.category # Topic模型不支持category
             )
+            # 如果Topic模型没有category字段，可能会被忽略，但这没关系
 
             topic_id = get_global_db_manager().create_topic(topic)
             if not topic_id:
@@ -809,7 +839,7 @@ class AutoInitiateAction(BaseAction):
             # 降级方案：随机选择
             return random.sample(all_keywords, min(3, len(all_keywords))) if all_keywords else []
 
-    def _get_adaptive_search_queries(self, stream_id: str = None) -> List[str]:
+    async def _get_adaptive_search_queries(self, stream_id: str = None) -> List[str]:
         """获取自适应搜索关键词（支持聊天流个性化）"""
         try:
             base_keywords = self.get_config(
@@ -828,6 +858,12 @@ class AutoInitiateAction(BaseAction):
 
             stream_preferences = self._analyze_stream_topic_preferences(stream_id)
             adapted_keywords = self._adapt_keywords_by_preferences(list(base_keywords), stream_preferences)
+
+            # Strategy 2: Dynamic Queries via LLM
+            if self.get_config("auto_initiate.enable_dynamic_queries", False):
+                dynamic_queries = await self._expand_queries_with_llm(adapted_keywords)
+                logger.debug(f"为聊天流 {stream_id} 生成动态查询: {len(dynamic_queries)}")
+                return dynamic_queries
 
             logger.debug(f"为聊天流 {stream_id} 生成自适应关键词: {len(adapted_keywords)}")
             return adapted_keywords
@@ -950,6 +986,16 @@ class AutoInitiateAction(BaseAction):
 
                 logger.debug(f"[A_Mind] 使用自动偏好: tech={tech_weight:.2f}, science={science_weight:.2f}, social={social_weight:.2f}, entertainment={entertainment_weight:.2f}")
 
+            # Strategy 1: Epsilon-Greedy Exploration
+            epsilon = self.get_config("auto_initiate.exploration_epsilon", 0.2)
+            if random.random() < epsilon:
+                logger.info(f"[A_Mind] 触发 Epsilon-Greedy 探索 (ε={epsilon}) - 忽略历史权重，使用均衡/反转策略")
+                # 简单实现：使用均衡权重，强制引入多样性
+                tech_weight = 0.25
+                science_weight = 0.25
+                social_weight = 0.25
+                entertainment_weight = 0.25
+
             result_keywords: List[str] = []
             target_count = max(len(base_keywords), 1)
 
@@ -992,3 +1038,77 @@ class AutoInitiateAction(BaseAction):
         except Exception as e:
             logger.warning(f"根据偏好调整关键词池失败: {e}")
             return base_keywords
+
+    async def _expand_queries_with_llm(self, keywords: List[str]) -> List[str]:
+        """Strategy 2: 使用LLM将关键词转化为具体的动态查询"""
+        try:
+            from src.plugin_system.apis import llm_api
+            from src.plugin_system.apis.llm_api import get_available_models
+            
+            if not keywords:
+                return []
+                
+            # 随机选取几个关键词作为种子，避免一次生成太多
+            seed_keywords = random.sample(keywords, min(3, len(keywords)))
+            
+            current_time_str = time.strftime("%Y年%m月", time.localtime())
+            
+            prompt = f"""
+你是一个专业的搜索引擎查询优化专家。
+当前时间是：{current_time_str}
+
+请根据以下关键词，生成3-5个具体的、具有时效性的搜索查询语句。
+目的是为了搜索到最新的、有趣的、值得讨论的新闻或话题。
+
+关键词种子：{', '.join(seed_keywords)}
+
+要求：
+1. 必须在查询中结合当前时间（{current_time_str}），确保即时性。
+2. 将宽泛的关键词转化为具体的事件或趋势。
+3. 查询语句要简短有力，适合搜索引擎。
+4. 只输出查询语句，每行一个，不要有标点符号或序号。
+5. 输出简体中文。
+
+示例输：
+2026年2月 人工智能 最新突破
+2026年 春节 热门电影 票房
+2026年 科技圈 重大事件
+"""
+            model_name = self.get_config("llm.model_name", "tool_use")
+            available_models = get_available_models()
+            model_config = available_models.get(model_name)
+            
+            if not model_config:
+                 # Fallback
+                 return keywords
+
+            ok, response, _, _ = await llm_api.generate_with_model(
+                    prompt=prompt,
+                    model_config=model_config,
+                    request_type="A_mind.dynamic_query",
+                    temperature=0.7,
+                    max_tokens=200,
+            )
+            
+            if ok and response:
+                queries = [line.strip() for line in str(response).strip().split('\n') if line.strip()]
+                # 过滤掉可能的序号
+                clean_queries = []
+                for q in queries:
+                    # 移除开头的 "1. " 或 "- " 或 "* "
+                    # 使用更精确的正则，避免误伤 "2026年"
+                    import re
+                    # 匹配行首的 (数字+点+空格) 或 (减号/星号+空格)
+                    q = re.sub(r'^(\d+\.|-|\*)\s*', '', q)
+                    if q:
+                        clean_queries.append(q)
+                        
+                if clean_queries:
+                    logger.info(f"[A_Mind] 动态生成的查询: {clean_queries}")
+                    return clean_queries
+                    
+            return keywords
+
+        except Exception as e:
+            logger.error(f"动态查询生成失败: {e}")
+            return keywords
