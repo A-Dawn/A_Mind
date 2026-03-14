@@ -423,6 +423,55 @@ class AMindPlugin(BasePlugin):
             "timeout": ConfigField(type=int, default=15, description="搜索请求超时时间（秒）"),
             "max_results": ConfigField(type=int, default=5, description="最大搜索结果数量"),
         },
+        "global_pool": {
+            "enabled": ConfigField(type=bool, default=False, description="是否启用总控池主动话题"),
+            "whitelist_streams": ConfigField(type=list, default=[], description="总控池白名单流ID列表"),
+            "tick_interval_seconds": ConfigField(type=int, default=300, description="总控池扫描周期（秒）"),
+            "lookback_hours": ConfigField(type=int, default=12, description="回看消息窗口（小时）"),
+            "min_messages_for_analysis": ConfigField(type=int, default=20, description="触发分析所需最小消息量"),
+            "summary_retention_hours": ConfigField(type=int, default=72, description="摘要保留时长（小时）"),
+            "raw_retention_hours": ConfigField(type=int, default=24, description="原文保留时长（小时）"),
+            "default_policy_profile": ConfigField(
+                type=str,
+                default="conservative",
+                choices=["conservative", "balanced", "aggressive"],
+                description="默认策略档位",
+            ),
+            "per_stream_cooldown_seconds": ConfigField(type=int, default=7200, description="单流冷却（秒）"),
+            "global_cooldown_seconds": ConfigField(type=int, default=1800, description="全局冷却（秒）"),
+            "max_global_sends_per_day": ConfigField(type=int, default=6, description="全局日发送上限"),
+            "max_per_stream_sends_per_day": ConfigField(type=int, default=2, description="单流日发送上限"),
+            "enable_cross_stream_boost": ConfigField(type=bool, default=True, description="启用跨流共振加分"),
+            "blocked_keywords": ConfigField(type=list, default=[], description="命中即阻断发送的关键词"),
+            "stream_policy": ConfigField(
+                type=dict,
+                default={},
+                description="按流映射策略，格式：{stream_id: conservative|balanced|aggressive}",
+            ),
+            "policy_profiles": {
+                "conservative": {
+                    "min_decision_score": ConfigField(type=float, default=0.85, description="最低决策分"),
+                    "trigger_probability": ConfigField(type=float, default=0.25, description="触发概率"),
+                    "min_novelty_score": ConfigField(type=float, default=0.60, description="最低新颖度"),
+                    "min_interest_score": ConfigField(type=float, default=0.60, description="最低兴趣度"),
+                    "max_candidates_per_tick": ConfigField(type=int, default=2, description="每轮最大候选数"),
+                },
+                "balanced": {
+                    "min_decision_score": ConfigField(type=float, default=0.75, description="最低决策分"),
+                    "trigger_probability": ConfigField(type=float, default=0.50, description="触发概率"),
+                    "min_novelty_score": ConfigField(type=float, default=0.50, description="最低新颖度"),
+                    "min_interest_score": ConfigField(type=float, default=0.50, description="最低兴趣度"),
+                    "max_candidates_per_tick": ConfigField(type=int, default=3, description="每轮最大候选数"),
+                },
+                "aggressive": {
+                    "min_decision_score": ConfigField(type=float, default=0.65, description="最低决策分"),
+                    "trigger_probability": ConfigField(type=float, default=0.80, description="触发概率"),
+                    "min_novelty_score": ConfigField(type=float, default=0.40, description="最低新颖度"),
+                    "min_interest_score": ConfigField(type=float, default=0.40, description="最低兴趣度"),
+                    "max_candidates_per_tick": ConfigField(type=int, default=5, description="每轮最大候选数"),
+                },
+            },
+        },
         # 多Plan配置支持：支持 plan1, plan2, plan3... 任意多个计划
         # 每个plan可以独立配置不同的聊天流、触发概率、间隔时间等
         # 示例：在config.toml中添加 [plan2], [plan3] 等配置段即可
@@ -609,6 +658,7 @@ class AMindPlugin(BasePlugin):
             (StreamManagementCommand.get_command_info(), StreamManagementCommand),
             (CheckCommand.get_command_info(), CheckCommand),
             (InitiateCommand.get_command_info(), InitiateCommand),
+            (PoolCommand.get_command_info(), PoolCommand),
             (HelpCommand.get_command_info(), HelpCommand),
             (DebugCommand.get_command_info(), DebugCommand),
             (ModelConfigCommand.get_command_info(), ModelConfigCommand),
@@ -616,6 +666,7 @@ class AMindPlugin(BasePlugin):
             # 事件处理器组件
             (AMindStartHandler.get_handler_info(), AMindStartHandler),
             (MessageTrackerEventHandler.get_handler_info(), MessageTrackerEventHandler),
+            (GlobalPoolCollectorEventHandler.get_handler_info(), GlobalPoolCollectorEventHandler),
             (StateCheckAction.get_action_info(), StateCheckAction),
             (AutoInitiateAction.get_action_info(), AutoInitiateAction),
         ]

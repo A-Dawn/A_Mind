@@ -1029,7 +1029,7 @@ class AutoInitiateAction(BaseAction):
                     continue
                 deduped.append(kw)
                 seen.add(kw)
-                if len(dedup) >= target_count:
+                if len(deduped) >= target_count:
                     break
 
             logger.debug(f"[A_Mind] 关键词调整完成: 从{len(base_keywords)}个基础关键词扩展到{len(deduped)}个")

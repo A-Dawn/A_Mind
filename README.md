@@ -3,7 +3,7 @@
 **ARC's MIND – 智能话题与主动思维插件（for MaiBot）**
 
 ![A_Mind Logo](https://img.shields.io/badge/A_Mind-智能话题管理-blue?style=for-the-badge)
-![Version](https://img.shields.io/badge/版本-0.3.0-orange?style=flat-square)
+![Version](https://img.shields.io/badge/版本-0.4.0-orange?style=flat-square)
 ![Python](https://img.shields.io/badge/Python-3.11+-green?style=flat-square)
 ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=flat-square)
 
@@ -235,6 +235,54 @@ min_messages = 5            # 最小上下文长度
 4. **观点僵局**：需要第三方解围
 5. **话题早夭**：好话题没人接
 
+##### 配置总控池主动话题 (Global Pool)
+
+总控池会在白名单聊天流中汇总近期消息，按策略由LLM决定是否主动发起话题：
+
+```toml
+[global_pool]
+enabled = false
+whitelist_streams = ["qq:123456:group"]
+tick_interval_seconds = 300
+lookback_hours = 12
+min_messages_for_analysis = 20
+summary_retention_hours = 72
+raw_retention_hours = 24
+default_policy_profile = "conservative"
+per_stream_cooldown_seconds = 7200
+global_cooldown_seconds = 1800
+max_global_sends_per_day = 6
+max_per_stream_sends_per_day = 2
+enable_cross_stream_boost = true
+blocked_keywords = []
+
+[global_pool.stream_policy]
+"qq:123456:group" = "balanced"
+
+[global_pool.policy_profiles.conservative]
+min_decision_score = 0.85
+trigger_probability = 0.25
+min_novelty_score = 0.60
+min_interest_score = 0.60
+max_candidates_per_tick = 2
+
+[global_pool.policy_profiles.balanced]
+min_decision_score = 0.75
+trigger_probability = 0.50
+min_novelty_score = 0.50
+min_interest_score = 0.50
+max_candidates_per_tick = 3
+
+[global_pool.policy_profiles.aggressive]
+min_decision_score = 0.65
+trigger_probability = 0.80
+min_novelty_score = 0.40
+min_interest_score = 0.40
+max_candidates_per_tick = 5
+```
+
+默认建议先使用 `conservative` 做灰度。
+
 ### 🎯 启动测试
 
 1. 重启MaiBot
@@ -255,6 +303,10 @@ min_messages = 5            # 最小上下文长度
 | `/amind_create`         | 创建新话题       | `/amind_create 标题 描述` |
 | `/amind_initiate`       | 手动发起话题     | `/amind_initiate`         |
 | `/amind_models`         | 查看模型配置     | `/amind_models all`       |
+| `/amind_pool status`    | 查看总控池状态   | `/amind_pool status`      |
+| `/amind_pool dryrun`    | 总控池干运行     | `/amind_pool dryrun`      |
+| `/amind_pool whitelist` | 查看白名单       | `/amind_pool whitelist`   |
+| `/amind_pool profile`   | 查看策略映射     | `/amind_pool profile`     |
 | `/kw show [plan]`       | 查看关键词权重   | `/kw show plan1`          |
 | `/kw set [plan] <参数>` | 设置关键词权重   | `/kw set plan1 tech=0.5`  |
 | `/kw enable [plan]`     | 启用手动权重     | `/kw enable plan1`        |
@@ -302,7 +354,14 @@ min_messages = 5            # 最小上下文长度
 
 ## 📝 版本信息
 
-### 🎯 0.3.0 (2026-02-02) - 当前版本
+### 🎯 0.4.0 (2026-03-14) - 当前版本
+
+- ✅ **总控池主动话题** - 汇总白名单聊天流消息并生成跨流候选话题
+- ✅ **总控池管理命令** - 支持 `/amind_pool status|dryrun|whitelist|profile`
+- ✅ **流级状态隔离** - 话题支持 `stream_ids` 绑定与独立状态追踪
+- 🔧 **启动逻辑修复** - 禁用的 Plan 不会再误启动后台任务
+
+### 🎯 0.3.0 (2026-02-02)
 
 - ✅ **话题捕捉** - 基于上下文感知的主动介入
 - ✅ **多Key轮询** - 增强搜索稳定性

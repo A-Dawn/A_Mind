@@ -1,7 +1,7 @@
 {
   "manifest_version": 1,
   "name": "A_Mind 智能话题管理插件",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "基于大模型的智能话题发起、追踪和回复插件，支持权限控制和自动状态管理",
   "author": {
     "name": "A-Dawn",
@@ -71,6 +71,11 @@
         "description": "调试功能命令"
       },
       {
+        "type": "command",
+        "name": "pool_command",
+        "description": "总控池状态与DryRun命令"
+      },
+      {
         "type": "action",
         "name": "message_tracker",
         "description": "消息追踪和回复"
@@ -89,7 +94,8 @@
       "调试功能支持",
       "话题捕捉与主动介入",
       "多API密钥轮询",
-      "高级话题策略"
+      "高级话题策略",
+      "总控池主动话题"
     ]
   },
   "id": "ARC.A_Mind"

@@ -34,6 +34,7 @@ class HelpCommand(BaseCommand):
             help_text += "• `/amind_visibility <话题ID> <public|private> [用户列表]` - 设置话题可见性\n"
             help_text += "• `/amind_check <话题ID>` - 手动触发状态检查\n"
             help_text += "• `/amind_initiate [话题ID] [stream:聊天流配置]` - 手动触发话题自发起\n"
+            help_text += "• `/amind_pool [status|dryrun|whitelist|profile]` - 总控池状态与干运行\n"
             help_text += "• `/amind_help` - 显示此帮助信息\n\n"
 
             help_text += " **调试命令**（仅限调试模式）\n"
