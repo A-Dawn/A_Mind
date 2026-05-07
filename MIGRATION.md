@@ -1,5 +1,10 @@
 # A_Mind MaiBot SDK Migration
 
+## 2026-05-07 - Version Bump
+
+- Bumped plugin version from `0.4.0` to `0.5.0` for the MaiBot SDK runtime migration release.
+- Updated README badge and changelog to mark `0.5.0` as the current version.
+
 ## 2026-05-07 - Baseline
 
 - Current branch: `dev`.

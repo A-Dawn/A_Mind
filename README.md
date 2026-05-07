@@ -3,7 +3,7 @@
 **ARC's MIND – 智能话题与主动思维插件（for MaiBot）**
 
 ![A_Mind Logo](https://img.shields.io/badge/A_Mind-智能话题管理-blue?style=for-the-badge)
-![Version](https://img.shields.io/badge/版本-0.4.0-orange?style=flat-square)
+![Version](https://img.shields.io/badge/版本-0.5.0-orange?style=flat-square)
 ![Python](https://img.shields.io/badge/Python-3.11+-green?style=flat-square)
 ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=flat-square)
 
@@ -354,7 +354,14 @@ max_candidates_per_tick = 5
 
 ## 📝 版本信息
 
-### 🎯 0.4.0 (2026-03-14) - 当前版本
+### 🎯 0.5.0 (2026-05-07) - 当前版本
+
+- ✅ **MaiBot SDK 运行时迁移** - 支持 Manifest v2 与新的 `MaiBotPlugin` / `create_plugin()` 加载入口
+- ✅ **原生工具声明** - 将状态检查和自动发起动作暴露为新插件系统 native SDK Tool
+- ✅ **Runner 集成验证** - 完成 MaiBot Runner、命令、事件、工具、发送链路和数据库基础流程验证
+- 🔧 **兼容层修复** - 修复 SDK 分发下的配置读取、权限上下文、LLM 桥接和手动自发起 stream 覆盖
+
+### 🎯 0.4.0 (2026-03-14)
 
 - ✅ **总控池主动话题** - 汇总白名单聊天流消息并生成跨流候选话题
 - ✅ **总控池管理命令** - 支持 `/amind_pool status|dryrun|whitelist|profile`
