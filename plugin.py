@@ -3,10 +3,14 @@ A_Mind插件主文件
 """
 
 import asyncio
+import contextlib
+import importlib
 import json
 import math
 import re
+import sys
 import time
+from types import SimpleNamespace
 from pathlib import Path
 from typing import List, Tuple, Type, Dict, Any, Optional, Set
 from dataclasses import dataclass, asdict
@@ -51,6 +55,9 @@ from src.plugin_system.apis.llm_api import get_available_models
 from .core.amind_logger import get_logger
 from src.config.config import global_config
 from src.manager.async_task_manager import AsyncTask, async_task_manager
+
+from maibot_sdk import MaiBotPlugin
+from maibot_sdk.compat import _context_holder
 
 # 导入重构后的模块
 from .core.dependency_container import DependencyContainer
@@ -113,6 +120,8 @@ class AMindPlugin(BasePlugin):
     def __init__(self, *args, **kwargs):
         # 首先调用父类初始化
         super().__init__(*args, **kwargs)
+        self.plugin_dir = Path(__file__).parent
+        self._plugin_config: Dict[str, Any] = {}
 
         # 设置全局插件实例
         global _plugin_instance
@@ -138,6 +147,23 @@ class AMindPlugin(BasePlugin):
                     logger.warning("[A_Mind] 数据库架构迁移失败")
         except Exception as e:
             logger.error(f"[A_Mind] 插件初始化异常: {e}")
+
+    def set_plugin_config(self, config: Dict[str, Any]) -> None:
+        self._plugin_config = config if isinstance(config, dict) else {}
+
+    def get_config(self, key: str, default: Any = None) -> Any:
+        value = _get_nested_config(self._plugin_config, key, None)
+        if value is not None:
+            return value
+        try:
+            import toml
+
+            config_path = self.plugin_dir / "config.toml"
+            if config_path.exists():
+                return _get_nested_config(toml.load(config_path), key, default)
+        except Exception:
+            pass
+        return default
 
     def _init_logger_manager(self):
         """初始化日志管理器（在容器创建后执行）"""
@@ -670,6 +696,483 @@ class AMindPlugin(BasePlugin):
             (StateCheckAction.get_action_info(), StateCheckAction),
             (AutoInitiateAction.get_action_info(), AutoInitiateAction),
         ]
+
+
+class AMindSDKPlugin(MaiBotPlugin):
+    """MaiBot SDK facade around the existing A_Mind business components."""
+
+    config_reload_subscriptions = ("bot", "model")
+
+    def __init__(self):
+        super().__init__()
+        self._legacy = AMindPlugin()
+        self._component_specs: List[Tuple[ComponentInfo, Type]] = []
+        self._component_instances: Dict[str, Any] = {}
+        self._component_map: Dict[str, Dict[str, Any]] = {}
+        self.plugin_dir = Path(__file__).parent
+        _install_legacy_llm_patch()
+
+    def __getattr__(self, name: str):
+        prefix = "_amind_dispatch__"
+        if name.startswith(prefix):
+            component_name = name[len(prefix):]
+
+            async def _handler(**kwargs):
+                kwargs["component_name"] = component_name
+                component = self._component_map.get(component_name, {})
+                component_type = str(component.get("type", "") or "")
+                if component_type == "COMMAND":
+                    return await self._dispatch_command(**kwargs)
+                if component_type == "EVENT_HANDLER":
+                    return await self._dispatch_event(**kwargs)
+                if component_type in ("ACTION", "TOOL"):
+                    return await self._dispatch_action(**kwargs)
+                raise KeyError(f"未知 A_Mind 组件: {component_name}")
+
+            return _handler
+        raise AttributeError(name)
+
+    def _set_context(self, ctx):
+        super()._set_context(ctx)
+        _context_holder.set_context(ctx)
+
+    def set_plugin_config(self, config: Dict[str, Any]) -> None:
+        super().set_plugin_config(config)
+        if hasattr(self._legacy, "set_plugin_config"):
+            self._legacy.set_plugin_config(config)
+
+    def get_config(self, key: str, default: Any = None) -> Any:
+        return _get_nested_config(self.get_plugin_config_data(), key, default)
+
+    def get_default_config(self) -> Dict[str, Any]:
+        try:
+            return _schema_to_default_config(self._legacy.config_schema)
+        except Exception as exc:
+            logger.warning(f"[A_Mind] 生成默认配置失败: {exc}")
+            return {}
+
+    def normalize_plugin_config(self, config_data):
+        default_config = self.get_default_config()
+        normalized = _merge_config(default_config, config_data or {})
+        return normalized, normalized != (config_data or {})
+
+    async def on_load(self) -> None:
+        await self._legacy.on_load()
+
+    async def on_unload(self) -> None:
+        shutdown = getattr(self._legacy, "on_unload", None)
+        if callable(shutdown):
+            result = shutdown()
+            if asyncio.iscoroutine(result):
+                await result
+
+    async def on_config_update(self, scope: str, config_data: Dict[str, Any], version: str) -> None:
+        del version
+        if scope == "self":
+            self.set_plugin_config(config_data if isinstance(config_data, dict) else {})
+
+    def get_components(self) -> List[Dict[str, Any]]:
+        if not self._component_specs:
+            self._component_specs = list(self._legacy.get_plugin_components())
+
+        components: List[Dict[str, Any]] = []
+        for comp_info, comp_cls in self._component_specs:
+            if not getattr(comp_info, "enabled", True):
+                continue
+            name = str(getattr(comp_info, "name", "") or "").strip()
+            if not name:
+                continue
+            if name not in self._component_instances:
+                self._component_instances[name] = comp_cls()
+            component = self._convert_component(comp_info, self._component_instances[name])
+            if component:
+                self._component_map[name] = component
+                components.append(component)
+        return components
+
+    def _convert_component(self, comp_info: ComponentInfo, instance: Any) -> Optional[Dict[str, Any]]:
+        ctype = str(getattr(comp_info, "component_type", "") or "")
+        name = str(getattr(comp_info, "name", "") or "").strip()
+        description = str(getattr(comp_info, "description", "") or "").strip()
+
+        if ctype == "command":
+            return {
+                "type": "COMMAND",
+                "component_type": "COMMAND",
+                "name": name,
+                "description": description or getattr(instance, "command_description", ""),
+                "metadata": {
+                    "command_pattern": getattr(instance, "command_pattern", ""),
+                    "handler_name": f"_amind_dispatch__{name}",
+                    "legacy": True,
+                },
+            }
+        if ctype == "event_handler":
+            return {
+                "type": "EVENT_HANDLER",
+                "component_type": "EVENT_HANDLER",
+                "name": name,
+                "description": description or getattr(instance, "handler_description", ""),
+                "metadata": {
+                    "event_type": str(getattr(instance, "event_type", "on_message")),
+                    "weight": int(getattr(instance, "weight", 0)),
+                    "intercept_message": bool(getattr(instance, "intercept_message", False)),
+                    "handler_name": f"_amind_dispatch__{name}",
+                    "legacy": True,
+                },
+            }
+        if ctype == "action":
+            parameters = getattr(instance, "action_parameters", {}) or {}
+            parameters_schema = _legacy_action_parameters_to_tool_schema(parameters)
+            return {
+                "type": "TOOL",
+                "component_type": "TOOL",
+                "name": name,
+                "description": description or getattr(instance, "action_description", ""),
+                "metadata": {
+                    "brief_description": description or getattr(instance, "action_description", "") or name,
+                    "detailed_description": _legacy_action_tool_description(instance, parameters_schema),
+                    "parameters_raw": parameters_schema,
+                    "invoke_method": "plugin.invoke_tool",
+                    "activation_type": str(getattr(instance, "activation_type", "always")),
+                    "action_parameters": parameters,
+                    "parallel_action": bool(getattr(instance, "parallel_action", False)),
+                    "handler_name": f"_amind_dispatch__{name}",
+                    "legacy": True,
+                },
+            }
+        logger.warning(f"[A_Mind] 跳过未知组件类型: {ctype} ({name})")
+        return None
+
+    async def _dispatch_command(self, **kwargs):
+        component_name = _infer_component_name(kwargs, self._component_map, "COMMAND")
+        instance = self._component_instances[component_name]
+        message = _build_legacy_message(kwargs)
+        instance.message = message
+        instance.plugin_config = self.get_plugin_config_data()
+        instance.container = self._legacy.container
+        instance.plugin_dir = self.plugin_dir
+        instance._plugin = self._legacy
+        instance._stream_id = str(kwargs.get("stream_id", "") or getattr(message, "session_id", "") or "")
+        groups = kwargs.get("matched_groups") if isinstance(kwargs.get("matched_groups"), dict) else {}
+        if not groups:
+            pattern = str(self._component_map.get(component_name, {}).get("metadata", {}).get("command_pattern", "") or "")
+            text = str(getattr(message, "plain_text", "") or getattr(message, "processed_plain_text", "") or "")
+            if pattern and text:
+                match = re.match(pattern, text)
+                if match:
+                    groups = match.groupdict()
+        if hasattr(instance, "set_matched_groups"):
+            instance.set_matched_groups(groups)
+        else:
+            instance.matched_groups = groups
+        with self._legacy_context():
+            return await instance.execute()
+
+    async def _dispatch_event(self, **kwargs):
+        component_name = _infer_component_name(kwargs, self._component_map, "EVENT_HANDLER")
+        instance = self._component_instances[component_name]
+        if hasattr(instance, "set_plugin_config"):
+            instance.set_plugin_config(self.get_plugin_config_data())
+        if hasattr(instance, "set_plugin_name"):
+            instance.set_plugin_name("a_mind")
+        message = _dict_to_namespace(kwargs.get("message")) if isinstance(kwargs.get("message"), dict) else kwargs.get("message")
+        if message is not None and not getattr(message, "stream_id", None):
+            setattr(message, "stream_id", str(kwargs.get("stream_id", "") or getattr(message, "session_id", "") or ""))
+        with self._legacy_context():
+            return await instance.execute(message)
+
+    async def _dispatch_action(self, **kwargs):
+        component_name = _infer_component_name(kwargs, self._component_map, "TOOL")
+        instance = self._component_instances[component_name]
+        instance.plugin_config = self.get_plugin_config_data()
+        instance.container = self._legacy.container
+        instance.plugin_dir = self.plugin_dir
+        instance._plugin = self._legacy
+        instance.action_data = _extract_tool_action_data(kwargs)
+        instance.action_reasoning = str(kwargs.get("reasoning", "") or kwargs.get("action_reasoning", "") or "")
+        instance._stream_id = str(kwargs.get("stream_id", "") or kwargs.get("chat_id", "") or "")
+        instance.chat_id = instance._stream_id
+        for attr in ("thinking_id", "cycle_timers", "chat_stream", "action_message", "message"):
+            if attr in kwargs:
+                setattr(instance, attr, kwargs[attr])
+        with self._legacy_context():
+            return await instance.execute()
+
+    @contextlib.contextmanager
+    def _legacy_context(self):
+        plugin_id = self.ctx.plugin_id if self._ctx else ""
+        token = _context_holder.activate_plugin(plugin_id)
+        try:
+            yield
+        finally:
+            _context_holder.deactivate_plugin(token)
+
+
+def _get_nested_config(config: Dict[str, Any], key: str, default: Any = None) -> Any:
+    current: Any = config
+    for part in str(key or "").split("."):
+        if isinstance(current, dict) and part in current:
+            current = current[part]
+        else:
+            return default
+    return current
+
+
+def _merge_config(default_config: Dict[str, Any], current_config: Dict[str, Any]) -> Dict[str, Any]:
+    merged = dict(default_config)
+    for key, value in dict(current_config or {}).items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _merge_config(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def _schema_to_default_config(schema: Dict[str, Any]) -> Dict[str, Any]:
+    result: Dict[str, Any] = {}
+    for key, value in dict(schema or {}).items():
+        if hasattr(value, "default"):
+            result[key] = getattr(value, "default")
+        elif isinstance(value, dict):
+            result[key] = _schema_to_default_config(value)
+    return result
+
+
+def _dict_to_namespace(value: Any) -> Any:
+    if isinstance(value, dict):
+        return SimpleNamespace(**{str(k): _dict_to_namespace(v) for k, v in value.items()})
+    if isinstance(value, list):
+        return [_dict_to_namespace(item) for item in value]
+    return value
+
+
+def _build_legacy_message(kwargs: Dict[str, Any]) -> Any:
+    message = _dict_to_namespace(kwargs.get("message")) if isinstance(kwargs.get("message"), dict) else kwargs.get("message")
+    if message is None:
+        text = str(kwargs.get("text", "") or "")
+        stream_id = str(kwargs.get("stream_id", "") or "")
+        user_id = str(kwargs.get("user_id", "") or "")
+        group_id = str(kwargs.get("group_id", "") or "")
+        user_info = SimpleNamespace(user_id=user_id, user_nickname="")
+        group_info = SimpleNamespace(group_id=group_id, group_name="")
+        message_info = SimpleNamespace(user_info=user_info, group_info=group_info, message_id="")
+        message = SimpleNamespace(
+            plain_text=text,
+            processed_plain_text=text,
+            stream_id=stream_id,
+            session_id=stream_id,
+            user_id=user_id,
+            sender=user_info,
+            message_info=message_info,
+            chat_stream=SimpleNamespace(stream_id=stream_id, session_id=stream_id),
+        )
+    else:
+        if not hasattr(message, "plain_text"):
+            setattr(message, "plain_text", getattr(message, "processed_plain_text", ""))
+        if not hasattr(message, "processed_plain_text"):
+            setattr(message, "processed_plain_text", getattr(message, "plain_text", ""))
+        if not hasattr(message, "stream_id"):
+            setattr(message, "stream_id", getattr(message, "session_id", str(kwargs.get("stream_id", "") or "")))
+        if not hasattr(message, "session_id"):
+            setattr(message, "session_id", getattr(message, "stream_id", str(kwargs.get("stream_id", "") or "")))
+        user_info = getattr(getattr(message, "message_info", None), "user_info", None)
+        if user_info is not None:
+            if not hasattr(message, "user_id"):
+                setattr(message, "user_id", str(getattr(user_info, "user_id", "") or ""))
+            if not hasattr(message, "sender"):
+                setattr(message, "sender", user_info)
+    return message
+
+
+def _infer_component_name(kwargs: Dict[str, Any], component_map: Dict[str, Dict[str, Any]], component_type: str) -> str:
+    explicit = str(kwargs.get("component_name", "") or kwargs.get("name", "") or "").strip()
+    if explicit and explicit in component_map:
+        return explicit
+    candidates = [name for name, comp in component_map.items() if comp.get("type") == component_type]
+    if len(candidates) == 1:
+        return candidates[0]
+    text = str(kwargs.get("text", "") or "")
+    if component_type == "COMMAND" and text:
+        for name in candidates:
+            pattern = str(component_map[name].get("metadata", {}).get("command_pattern", "") or "")
+            if pattern and re.match(pattern, text):
+                return name
+    raise KeyError(f"无法确定 {component_type} 组件: {explicit or '<empty>'}")
+
+
+def _legacy_action_parameters_to_tool_schema(parameters: Dict[str, Any]) -> Dict[str, Any]:
+    properties: Dict[str, Any] = {}
+    for name, description in dict(parameters or {}).items():
+        parameter_name = str(name or "").strip()
+        if not parameter_name:
+            continue
+        properties[parameter_name] = {
+            "type": "string",
+            "description": str(description or "").strip() or "兼容旧 Action 参数",
+        }
+    return {"type": "object", "properties": properties} if properties else {}
+
+
+def _legacy_action_tool_description(instance: Any, parameters_schema: Dict[str, Any]) -> str:
+    parts = []
+    description = str(getattr(instance, "action_description", "") or "").strip()
+    if description:
+        parts.append(description)
+    properties = parameters_schema.get("properties") if isinstance(parameters_schema, dict) else {}
+    if isinstance(properties, dict) and properties:
+        lines = ["参数说明："]
+        for name, schema in properties.items():
+            schema = schema if isinstance(schema, dict) else {}
+            lines.append(f"- {name}: {schema.get('description', '兼容旧 Action 参数')}")
+        parts.append("\n".join(lines))
+    requirements = [
+        str(item).strip()
+        for item in (getattr(instance, "action_require", []) or [])
+        if str(item).strip()
+    ]
+    if requirements:
+        parts.append("使用建议：\n" + "\n".join(f"- {item}" for item in requirements))
+    associated_types = [
+        str(item).strip()
+        for item in (getattr(instance, "associated_types", []) or [])
+        if str(item).strip()
+    ]
+    if associated_types:
+        parts.append(f"适用消息类型：{', '.join(associated_types)}")
+    return "\n\n".join(parts)
+
+
+def _extract_tool_action_data(kwargs: Dict[str, Any]) -> Dict[str, Any]:
+    if isinstance(kwargs.get("action_data"), dict):
+        return dict(kwargs["action_data"])
+    ignored_keys = {
+        "component_name",
+        "reasoning",
+        "action_reasoning",
+        "stream_id",
+        "chat_id",
+        "thinking_id",
+        "cycle_timers",
+        "chat_stream",
+        "action_message",
+        "message",
+    }
+    return {key: value for key, value in kwargs.items() if key not in ignored_keys}
+
+
+def create_plugin() -> AMindSDKPlugin:
+    return AMindSDKPlugin()
+
+
+def _install_legacy_llm_patch() -> None:
+    try:
+        from maibot_sdk.compat.apis import llm_api as compat_llm_api
+    except Exception:
+        return
+
+    def _amind_get_available_models() -> Dict[str, Any]:
+        return {
+            "tool_use": {"name": "tool_use"},
+            "replyer": {"name": "replyer"},
+            "planner": {"name": "planner"},
+            "utils": {"name": "utils"},
+        }
+
+    async def _amind_generate_with_model(
+        prompt: str,
+        model_config: Any = None,
+        request_type: str = "plugin.generate",
+        temperature: float = None,
+        max_tokens: int = None,
+        **kwargs: Any,
+    ) -> Tuple[bool, str, str, str]:
+        del request_type
+        ctx = _context_holder.get_context()
+        if ctx is None:
+            return False, "", "", ""
+        model_name = _extract_model_name(model_config)
+        try:
+            result = await ctx.llm.generate(
+                prompt=prompt,
+                model=model_name,
+                temperature=temperature if temperature is not None else 0.7,
+                max_tokens=max_tokens if max_tokens is not None else 2000,
+                **kwargs,
+            )
+        except Exception as exc:
+            logger.error(f"[A_Mind] LLM兼容调用失败: {exc}")
+            return False, str(exc), "", model_name
+        if isinstance(result, dict):
+            ok = bool(result.get("success", True))
+            content = str(result.get("response", result.get("content", "")) or "")
+            reasoning = str(result.get("reasoning", "") or "")
+            used_model = str(result.get("model", result.get("model_name", model_name)) or model_name)
+            return ok, content, reasoning, used_model
+        return True, str(result), "", model_name
+
+    modules_to_patch = []
+    for module_name in ("maibot_sdk.compat.apis.llm_api", "src.plugin_system.apis.llm_api"):
+        module = sys.modules.get(module_name)
+        if module is None:
+            with contextlib.suppress(Exception):
+                module = importlib.import_module(module_name)
+        if module is not None and module not in modules_to_patch:
+            modules_to_patch.append(module)
+    if compat_llm_api not in modules_to_patch:
+        modules_to_patch.append(compat_llm_api)
+
+    for llm_module in modules_to_patch:
+        llm_module.get_available_models = _amind_get_available_models
+        llm_module.generate_with_model = _amind_generate_with_model
+        llm_module._amind_patched = True
+
+    with contextlib.suppress(Exception):
+        apis_pkg = importlib.import_module("maibot_sdk.compat.apis")
+        apis_pkg.llm_api = modules_to_patch[0]
+    with contextlib.suppress(Exception):
+        apis_pkg = importlib.import_module("src.plugin_system.apis")
+        apis_pkg.llm_api = modules_to_patch[-1]
+
+    plugin_root = Path(__file__).parent.resolve()
+    for module in list(sys.modules.values()):
+        module_name = str(getattr(module, "__name__", "") or "")
+        module_file = str(getattr(module, "__file__", "") or "")
+        try:
+            is_plugin_module = bool(module_file) and Path(module_file).resolve().is_relative_to(plugin_root)
+        except Exception:
+            is_plugin_module = False
+        if (
+            not is_plugin_module
+            and ".A_Mind." not in module_name
+            and not module_name.endswith("A_Mind")
+            and not module_name.startswith("_maibot_plugin_")
+        ):
+            continue
+        if hasattr(module, "get_available_models"):
+            with contextlib.suppress(Exception):
+                setattr(module, "get_available_models", _amind_get_available_models)
+        if getattr(module, "llm_api", None) is compat_llm_api:
+            with contextlib.suppress(Exception):
+                setattr(module, "llm_api", compat_llm_api)
+
+
+def _extract_model_name(model_config: Any) -> str:
+    if isinstance(model_config, str):
+        return model_config
+    if isinstance(model_config, dict):
+        for key in ("name", "model_name", "task_name"):
+            value = str(model_config.get(key, "") or "").strip()
+            if value:
+                return value
+    for key in ("name", "model_name", "task_name"):
+        value = str(getattr(model_config, key, "") or "").strip()
+        if value:
+            return value
+    return ""
+
+
+_install_legacy_llm_patch()
 
 
 # get_global_db_manager现在在utils.py中定义

@@ -1,102 +1,58 @@
 {
-  "manifest_version": 1,
-  "name": "A_Mind 智能话题管理插件",
+  "manifest_version": 2,
   "version": "0.4.0",
+  "name": "A_Mind 智能话题管理插件",
   "description": "基于大模型的智能话题发起、追踪和回复插件，支持权限控制和自动状态管理",
   "author": {
     "name": "A-Dawn",
     "url": "https://github.com/A-Dawn"
   },
   "license": "AGPL-v3.0-or-later",
-  "host_application": {
-    "min_version": "0.11.0",
-    "max_version": "0.12.3"
+  "urls": {
+    "repository": "https://github.com/A-Dawn/A_Mind",
+    "homepage": "https://github.com/A-Dawn/A_Mind",
+    "documentation": "https://github.com/A-Dawn/A_Mind",
+    "issues": "https://github.com/A-Dawn/A_Mind/issues"
   },
-  "homepage_url": "https://github.com/A-Dawn/A_Mind",
-  "repository_url": "https://github.com/A-Dawn/A_Mind",
-  "keywords": [
-    "topic",
-    "conversation",
-    "AI",
-    "management",
-    "automation"
+  "host_application": {
+    "min_version": "1.0.0",
+    "max_version": "1.0.0"
+  },
+  "sdk": {
+    "min_version": "2.0.0",
+    "max_version": "2.99.99"
+  },
+  "dependencies": [
+    {
+      "type": "python_package",
+      "name": "toml",
+      "version_spec": ">=0.10.2,<1.0.0"
+    }
   ],
-  "categories": [
-    "Entertainment & Interaction"
+  "capabilities": [
+    "send.text",
+    "send.image",
+    "send.emoji",
+    "send.forward",
+    "send.hybrid",
+    "send.command",
+    "send.custom",
+    "llm.generate",
+    "llm.generate_with_tools",
+    "llm.get_available_models",
+    "config.get",
+    "config.get_plugin",
+    "chat.get_all_streams",
+    "chat.get_group_streams",
+    "chat.get_private_streams",
+    "tool.get_definitions"
   ],
-  "default_locale": "zh-CN",
-  "locales_path": "_locales",
-  "plugin_info": {
-    "is_built_in": false,
-    "plugin_type": "conversation_management",
-    "components": [
-      {
-        "type": "command",
-        "name": "topic_create",
-        "description": "创建新话题"
-      },
-      {
-        "type": "command",
-        "name": "topic_list",
-        "description": "查看话题列表"
-      },
-      {
-        "type": "command",
-        "name": "topic_update",
-        "description": "更新话题信息"
-      },
-      {
-        "type": "command",
-        "name": "topic_delete",
-        "description": "删除话题"
-      },
-      {
-        "type": "command",
-        "name": "topic_visibility",
-        "description": "设置话题可见性"
-      },
-      {
-        "type": "command",
-        "name": "topic_check",
-        "description": "手动状态检查"
-      },
-      {
-        "type": "command",
-        "name": "help_command",
-        "description": "显示帮助信息"
-      },
-      {
-        "type": "command",
-        "name": "debug_commands",
-        "description": "调试功能命令"
-      },
-      {
-        "type": "command",
-        "name": "pool_command",
-        "description": "总控池状态与DryRun命令"
-      },
-      {
-        "type": "action",
-        "name": "message_tracker",
-        "description": "消息追踪和回复"
-      },
-      {
-        "type": "action",
-        "name": "state_check",
-        "description": "主动状态检查"
-      }
-    ],
-    "features": [
-      "智能话题管理",
-      "权限控制系统",
-      "大模型集成",
-      "自动状态检查",
-      "调试功能支持",
-      "话题捕捉与主动介入",
-      "多API密钥轮询",
-      "高级话题策略",
-      "总控池主动话题"
+  "i18n": {
+    "default_locale": "zh-CN",
+    "locales_path": "_locales",
+    "supported_locales": [
+      "zh-CN"
     ]
   },
-  "id": "ARC.A_Mind"
+  "id": "A-Dawn.A-Mind"
 }

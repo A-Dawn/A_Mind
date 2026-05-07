@@ -1,0 +1,186 @@
+[plugin]
+enabled = false
+config_version = "2.0.0"
+
+[permissions]
+super_admins = [""]
+admin_groups = [""]
+enable_inheritance = true
+inheritance_controlled_by_user = true
+global_admin_mode = false
+
+[logging]
+enabled = true
+preset = "normal"
+level = "INHERIT"
+
+[logging.modules]
+services = "INHERIT"
+handlers = "INHERIT"
+commands = "INHERIT"
+core = "INHERIT"
+database = "INHERIT"
+
+[logging.features]
+show_search_results = false
+show_llm_prompts = false
+show_topic_matching = false
+show_initiation_workflow = false
+show_performance_metrics = false
+
+[logging.format]
+show_timestamp = false
+show_module_name = false
+use_colors = true
+compact_mode = true
+
+[logging.file_output]
+enabled = false
+path = "logs/amind.log"
+max_size_mb = 10
+backup_count = 5
+
+[debug]
+enable_debug_mode = false
+debug_command_prefix = "/amind_debug"
+allowed_debug_users = ["123456789"]
+
+[llm]
+use_builtin = true
+model_name = "utils"
+fallback_openai = false
+openai_api_key = ""
+fallback_model_name = "replyer"
+temperature = 0.7
+max_tokens = 1500
+
+[services.brainstorm]
+model_name = "utils"
+fallback_model_name = "replyer"
+temperature = 0.8
+max_tokens = 2000
+
+[services.decision]
+model_name = "planner"
+fallback_model_name = "utils"
+temperature = 0.3
+max_tokens = 1000
+
+[prompts]
+matching_system_prompt = "你是一个话题匹配专家，负责分析消息内容与话题描述的相关性。请返回一个0-1之间的匹配分数。重要：只返回一个小数数字，不要包含任何解释、思考过程或其他文本。例如：0.85"
+initiate_brainstorm_prompt = "请基于以下信息进行头脑风暴，生成{num_topics}个相关的话题建议：\n\n上下文信息：\n- 原始话题：{original_topic}\n- 描述：{description}\n- 相关搜索结果：{search_results}\n- 知识库内容：{knowledge_content}\n\n要求：\n1. 每个话题都要有创新性和吸引力\n2. 话题应该与原始主题相关但不重复\n3. 考虑用户参与度和讨论潜力\n4. 提供简洁有力的标题和描述\n5. 为每个话题添加合适的标签\n\n请严格返回JSON格式，不要输出任何其他内容：\n{{\n  \"topics\": [\n    {{\n      \"title\": \"话题标题\",\n      \"description\": \"话题描述（50字以内）\",\n      \"category\": \"话题分类\",\n      \"novelty_score\": 0.0,\n      \"engagement_potential\": 0.0,\n      \"reasoning\": \"生成理由\",\n      \"tags\": [\"标签1\", \"标签2\"]\n    }}\n  ]\n}}\n"
+initiate_decision_prompt = "请从以下话题选项中选择最适合发起讨论的一个：\n\n原始话题：{original_topic}\n当前参与情况：{engagement_context}\n\n候选话题列表：\n{topic_list}\n\n选择标准：\n1. 相关性：与原始话题的相关程度\n2. 新颖性：话题的新鲜感和吸引力\n3. 参与潜力：能够激发用户讨论的可能性\n4. 时机合适性：当前是否是讨论的好时机\n5. 多样性：避免与现有话题过度重复\n\n请返回JSON格式：\n{{\n  \"selected_index\": 0,\n  \"confidence_score\": 0.0,\n  \"reasoning\": \"选择理由\",\n  \"criteria_scores\": {{\n    \"relevance\": 0.0,\n    \"novelty\": 0.0,\n    \"engagement_potential\": 0.0,\n    \"timing\": 0.0,\n    \"diversity\": 0.0\n  }}\n}}\n"
+evaluation_prompt = "请评估以下话题的进展情况和用户参与度：\n\n话题信息：\n标题：{title}\n描述：{description}\n创建时间：{created_time}\n最后活动：{last_activity}\n回复数量：{reply_count}\n参与度分数：{engagement_score}\n\n最近回复：\n{recent_messages}\n\n请从以下维度进行评估：\n1. 用户参与度 (0-1)：活跃度、回复频率、用户多样性\n2. 话题进展度 (0-1)：是否达成预期目标、讨论深度\n3. 对话健康度 (0-1)：积极正面、建设性讨论\n\n请返回JSON格式：\n{{\n  \"engagement_score\": 0.0,\n  \"progress_score\": 0.0,\n  \"sentiment_score\": 0.0,\n  \"recommendation\": \"continue/pause/terminate/initiate\",\n  \"reason\": \"评估理由\"\n}}\n"
+visibility_analysis_prompt = "分析以下话题的参与情况，判断应该保持公开还是转为私有：\n{topic_info}\n请给出可见性建议和原因。"
+
+[topic_management]
+max_active_topics = 5
+max_topic_duration_days = 7
+auto_archive_days = 30
+default_visibility = "public"
+force_visibility = ""
+enable_auto_visibility_change = true
+auto_initiate_interval_hours = 24
+auto_initiate_max_attempts = 3
+dnd_enabled = false
+dnd_start_time = "23:00"
+dnd_end_time = "08:00"
+
+[matching]
+similarity_threshold = 0.6
+keyword_boost = 1.2
+context_window = 15
+time_decay_factor = 0.95
+
+[state_check]
+check_interval_minutes = 20
+min_replies_for_check = 5
+engagement_threshold = 0.3
+enable_termination_detection = true
+
+[auto_initiate]
+enable_personality_injection = true
+initiate_strategy = "balanced"
+creation_probability = 0.6
+creation_based_on_search = true
+min_search_results = 5
+search_keywords = ["社会热点新闻", "娱乐八卦资讯", "美食推荐攻略", "旅游景点介绍", "电影电视剧推荐", "音乐新歌榜单", "游戏行业动态", "时尚潮流趋势", "健康生活指南", "育儿教育经验", "职场发展建议", "投资理财知识", "家居装修灵感", "宠物养护知识", "运动健身方法", "心理健康话题", "文化艺术资讯", "生活小技巧"]
+tech_keywords = ["AI应用", "智能手机", "社交媒体", "移动支付", "在线教育", "远程办公", "直播技术", "短视频平台", "云计算服务", "大数据应用", "网络安全", "数字创新"]
+science_keywords = ["医学健康", "营养饮食", "环境保护", "气候变化", "新能源应用", "太空探索", "基因科技", "大脑科学", "生命科学", "材料创新"]
+social_keywords = ["社会热点", "教育话题", "医疗健康", "经济新闻", "文化传承", "城市生活", "乡村发展", "创业就业", "青年话题", "家庭教育", "养老保障", "住房政策", "交通出行", "社区生活", "公益活动", "志愿服务", "传统文化", "现代生活", "消费趋势", "社交关系"]
+entertainment_keywords = ["娱乐新闻", "电影推荐", "电视剧追剧", "音乐新歌", "综艺节目", "明星八卦", "体育赛事", "游戏攻略", "动漫新作", "短视频热点", "直播精彩", "电竞比赛", "时尚穿搭", "美妆护肤", "美食探店", "旅游攻略", "摄影技巧", "手工DIY", "创意设计", "艺术展览"]
+activation_priority = "engagement"
+min_engagement_for_activation = 0.4
+max_topics_to_consider = 10
+default_stream_config = ""
+fallback_topics = ["大家玩原神吗？"]
+fallback_topic_probability = 0.0
+exploration_epsilon = 0.2
+enable_dynamic_queries = true
+
+[internet_search]
+engine = "tavily"
+tavily_api_key = []
+tavily_base_url = "https://api.tavily.com"
+searxng_base_url = ""
+timeout = 15
+max_results = 5
+
+[global_pool]
+enabled = false
+whitelist_streams = []
+tick_interval_seconds = 300
+lookback_hours = 12
+min_messages_for_analysis = 20
+summary_retention_hours = 72
+raw_retention_hours = 24
+default_policy_profile = "conservative"
+per_stream_cooldown_seconds = 7200
+global_cooldown_seconds = 1800
+max_global_sends_per_day = 6
+max_per_stream_sends_per_day = 2
+enable_cross_stream_boost = true
+blocked_keywords = []
+
+[global_pool.stream_policy]
+
+[global_pool.policy_profiles.conservative]
+min_decision_score = 0.85
+trigger_probability = 0.25
+min_novelty_score = 0.6
+min_interest_score = 0.6
+max_candidates_per_tick = 2
+
+[global_pool.policy_profiles.balanced]
+min_decision_score = 0.75
+trigger_probability = 0.5
+min_novelty_score = 0.5
+min_interest_score = 0.5
+max_candidates_per_tick = 3
+
+[global_pool.policy_profiles.aggressive]
+min_decision_score = 0.65
+trigger_probability = 0.8
+min_novelty_score = 0.4
+min_interest_score = 0.4
+max_candidates_per_tick = 5
+
+[plan1]
+enabled = false
+stream_config = "qq:1145141919810:group"
+tick_interval_seconds = 120
+trigger_probability = 0.2
+cooldown_seconds = 1800
+
+[plan1.topic_capture]
+enabled = false
+probability = 0.5
+interval = 600
+min_messages = 5
+
+[plan2]
+enabled = false
+stream_config = "qq:1145141919811:private"
+tick_interval_seconds = 120
+trigger_probability = 0.2
+cooldown_seconds = 1800

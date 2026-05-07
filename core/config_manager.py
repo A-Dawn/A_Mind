@@ -28,6 +28,8 @@ class ConfigManager:
         Returns:
             配置值或默认值
         """
+        if callable(self.plugin):
+            return self.plugin(key, default)
         return self.plugin.get_config(key, default)
 
     def get_bool(self, key: str, default: bool = False) -> bool:
