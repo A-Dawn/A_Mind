@@ -33,7 +33,7 @@ class AutoSender:
     def __init__(self, db_manager=None):
         self.send_queue = []
         self.is_running = False
-        self.db_manager = db_manager
+        self.db_manager = db_manager or get_global_db_manager()
 
     async def schedule_send(self, request: AutoSendRequest) -> bool:
         """调度自动发送"""
@@ -187,11 +187,12 @@ class AutoSender:
         """检查发送条件"""
         try:
             conditions = request.conditions or {}
+            db_manager = self.db_manager or get_global_db_manager()
 
             # 检查参与度条件
             min_engagement = conditions.get("min_engagement", 0.0)
             if min_engagement > 0:
-                topic = self.db_manager.get_topic(request.topic_id)
+                topic = db_manager.get_topic(request.topic_id)
                 if topic and topic.engagement_score < min_engagement:
                     logger.info(f"[A_Mind] 发送条件不满足 - 参与度不足: {topic.engagement_score} < {min_engagement}")
                     return False
@@ -199,7 +200,7 @@ class AutoSender:
             # 检查时间条件
             min_interval_hours = conditions.get("min_interval_hours", 0)
             if min_interval_hours > 0:
-                topic = self.db_manager.get_topic(request.topic_id)
+                topic = db_manager.get_topic(request.topic_id)
                 if topic and topic.last_auto_initiate_at:
                     hours_since_last = (time.time() - topic.last_auto_initiate_at) / 3600
                     if hours_since_last < min_interval_hours:

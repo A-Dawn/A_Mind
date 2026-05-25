@@ -105,6 +105,7 @@ class MessageTrackerEventHandler(BaseEventHandler):
 
                 reply_record = TopicReply(
                     topic_id=best_match.id,
+                    stream_id=str(current_stream_id),
                     message_id=getattr(self, "message_id", ""),
                     user_id=str(user_id),
                     user_name=str(user_name),

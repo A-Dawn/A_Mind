@@ -15,6 +15,7 @@ from .debug_command import DebugCommand
 from .stream_management_command import StreamManagementCommand
 from .initiate_command import InitiateCommand
 from .model_config_command import ModelConfigCommand
+from .pool_command import PoolCommand
 
 __all__ = [
     'CreateTopicCommand',
@@ -27,6 +28,7 @@ __all__ = [
     'DebugCommand',
     'StreamManagementCommand',
     'InitiateCommand',
-    'ModelConfigCommand'
+    'ModelConfigCommand',
+    'PoolCommand',
 ]
 

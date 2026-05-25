@@ -182,6 +182,42 @@ def init_database():
             )
         ''')
 
+        # 创建总控池事件表（最小化存储）
+        cursor.execute(
+            '''
+            CREATE TABLE IF NOT EXISTS amind_pool_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                stream_id TEXT NOT NULL,
+                message_id TEXT,
+                user_id_hash TEXT NOT NULL,
+                role TEXT DEFAULT 'user',
+                summary_text TEXT NOT NULL,
+                raw_text TEXT,
+                features_json TEXT DEFAULT '{}',
+                created_at REAL DEFAULT 0,
+                summary_expire_at REAL DEFAULT 0,
+                raw_expire_at REAL DEFAULT 0
+            )
+        '''
+        )
+
+        # 创建总控池决策记录表
+        cursor.execute(
+            '''
+            CREATE TABLE IF NOT EXISTS amind_pool_decisions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                stream_id TEXT NOT NULL,
+                policy_profile TEXT NOT NULL,
+                decision_json TEXT DEFAULT '{}',
+                selected_topic_title TEXT,
+                score REAL DEFAULT 0.0,
+                sent INTEGER DEFAULT 0,
+                reason TEXT,
+                created_at REAL DEFAULT 0
+            )
+        '''
+        )
+
         # 创建索引以提高查询性能
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_amind_topics_status ON amind_topics(status)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_amind_topics_creator ON amind_topics(creator_id)')
@@ -190,6 +226,15 @@ def init_database():
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_amind_replies_created ON amind_replies(created_at)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_amind_knowledge_title ON amind_knowledge(title)')
         cursor.execute('CREATE INDEX IF NOT EXISTS idx_amind_knowledge_category ON amind_knowledge(category)')
+        cursor.execute(
+            'CREATE INDEX IF NOT EXISTS idx_pool_events_stream_time ON amind_pool_events(stream_id, created_at)'
+        )
+        cursor.execute(
+            'CREATE INDEX IF NOT EXISTS idx_pool_events_expire ON amind_pool_events(summary_expire_at, raw_expire_at)'
+        )
+        cursor.execute(
+            'CREATE INDEX IF NOT EXISTS idx_pool_decisions_stream_time ON amind_pool_decisions(stream_id, created_at)'
+        )
 
         conn.commit()
         logger.info(f"数据库初始化完成: {DB_PATH}")

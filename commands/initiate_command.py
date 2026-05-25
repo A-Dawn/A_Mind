@@ -142,7 +142,7 @@ class InitiateCommand(BaseCommand):
                 auto_initiate_action.get_config = custom_get_config
 
             # 设置 message 属性，确保 _get_target_stream_id 能正确工作
-            auto_initiate_action.message = self.message
+            auto_initiate_action.message = self._build_manual_initiate_message(stream_config)
 
             # 手动指定目标聊天流（如果当前消息的stream_id无效）
             target_stream_id = self._get_target_stream_for_manual_initiate(auto_initiate_action)
@@ -199,6 +199,32 @@ class InitiateCommand(BaseCommand):
         except Exception as e:
             logger.error(f"执行单个话题自发起失败: {e}")
             return False
+
+    def _build_manual_initiate_message(self, stream_config: Optional[str] = None):
+        """Build the message object used by AutoInitiateAction.
+
+        A manual `stream:` override must win over the command message stream,
+        because AutoInitiateAction reads `message.chat_stream` first.
+        """
+        if not stream_config:
+            return self.message
+
+        class _ChatStreamOverride:
+            def __init__(self, stream_id: str):
+                self.stream_id = stream_id
+                self.session_id = stream_id
+
+        class _MessageWithStreamOverride:
+            def __init__(self, original_message, stream_id: str):
+                self._original_message = original_message
+                self.chat_stream = _ChatStreamOverride(stream_id)
+                self.stream_id = stream_id
+                self.session_id = stream_id
+
+            def __getattr__(self, item):
+                return getattr(self._original_message, item)
+
+        return _MessageWithStreamOverride(self.message, stream_config)
 
     async def _execute_auto_initiation(self) -> Tuple[bool, str]:
         """执行自动选择话题的自发起"""

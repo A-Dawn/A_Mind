@@ -16,6 +16,7 @@ try:
     from ..handlers.auto_initiate_action import AutoInitiateAction
     from ..services.auto_sender import AutoSender
     from ..core.a_mind_plan_tick_task import AMindPlanTickTask
+    from ..core.a_mind_global_pool_tick_task import AMindGlobalPoolTickTask
 except ImportError:
     # 直接导入时的备用方案
     import sys
@@ -27,6 +28,7 @@ except ImportError:
     from handlers.auto_initiate_action import AutoInitiateAction
     from services.auto_sender import AutoSender
     from core.a_mind_plan_tick_task import AMindPlanTickTask
+    from core.a_mind_global_pool_tick_task import AMindGlobalPoolTickTask
 
 logger = get_logger(__name__)
 
@@ -80,8 +82,9 @@ class AMindStartHandler(BaseEventHandler):
                     if key.startswith('plan') and key != 'plan1':  # plan1单独处理
                         if isinstance(self.plugin_config[key], dict) and self.plugin_config[key].get('enabled', False):
                             plan_names.append(key)
-                # 总是包含plan1（如果存在）
-                if 'plan1' in self.plugin_config and isinstance(self.plugin_config['plan1'], dict):
+                # 仅在plan1显式启用时包含
+                plan1_config = self.plugin_config.get('plan1')
+                if isinstance(plan1_config, dict) and plan1_config.get('enabled', False):
                     plan_names.insert(0, 'plan1')
                 return plan_names
 
@@ -113,7 +116,6 @@ class AMindStartHandler(BaseEventHandler):
 
             if not available_plans:
                 logger.info("[A_mind] 未发现任何启用的plan配置")
-                return True, True, None, None, None
 
             # 为每个plan创建对应的任务
             for plan_name in available_plans:
@@ -219,6 +221,19 @@ class AMindStartHandler(BaseEventHandler):
                 except Exception as e:
                     logger.error(f"[A_mind] 创建 {plan_name} 任务失败: {e}")
                     continue
+
+            # 启动总控池任务（功能是否实际执行由 global_pool.enabled 控制）
+            try:
+                global_pool_sender = AutoSender()
+                global_pool_sender.get_config = self.get_config
+                global_pool_task = AMindGlobalPoolTickTask(
+                    get_config=self.get_config,
+                    auto_sender=global_pool_sender,
+                )
+                await async_task_manager.add_task(global_pool_task)
+                logger.info("[A_mind] 总控池任务创建成功")
+            except Exception as e:
+                logger.error(f"[A_mind] 创建总控池任务失败: {e}")
 
             return True, True, None, None, None
         except Exception as e:

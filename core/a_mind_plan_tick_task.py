@@ -78,137 +78,108 @@ class AMindPlanTickTask(AsyncTask):
         except Exception as e:
             logger.error(f"[{plan_display}] AutoSender队列处理失败: {e}")
 
-        # 4) 概率触发 + 冷却
+        # 4) 检查是否启用当前plan
         enabled = bool(self._get_config(f"{self._plan_name}.enabled", False))
-        # logger.debug(f"[{plan_display}] {self._plan_name.upper()}启用状态: {enabled}")
         if not enabled:
-            # logger.debug(f"[{plan_display}] {self._plan_name.upper()}未启用，跳过自动发起")
             return
 
+        stream_config = str(self._get_config(f"{self._plan_name}.stream_config", "")).strip()
+        if not stream_config:
+            logger.warning(f"[{plan_display}] 聊天流配置为空，跳过本次执行")
+            return
+
+        stream_id = self._parse_stream_config_to_stream_id(stream_config)
+        if not stream_id:
+            logger.warning(f"[{plan_display}] stream_config无效: {stream_config}")
+            return
+
+        # AutoInitiateAction 依赖 self.message.chat_stream.stream_id，因此这里构造一个最小 message
+        class _PlanChatStream:
+            def __init__(self, sid: str):
+                self.stream_id = sid
+
+        class _PlanMessage:
+            def __init__(self, sid: str):
+                self.chat_stream = _PlanChatStream(sid)
+
+        self._auto_initiate_action.message = _PlanMessage(stream_id)  # type: ignore
+
+        # 5) 概率触发 + 冷却（自动发起）
         cooldown_seconds = int(self._get_config(f"{self._plan_name}.cooldown_seconds", 1800))
         prob = float(self._get_config(f"{self._plan_name}.trigger_probability", 0.02))
         now = time.time()
 
-        # logger.debug(f"[{plan_display}] 配置 - 冷却时间:{cooldown_seconds}秒, 触发概率:{prob}")
-
         if self._last_auto_initiate_at == 0:
-            # 如果上次时间为0，可能是启动时数据库被锁导致读取失败
-            # 尝试重新加载一次，避免因为"无记录"而直接触发概率检查
             try:
                 from ..utils import get_global_db_manager
+
                 db_mgr = get_global_db_manager()
-                # 重新获取
                 last_time_str = db_mgr.get_meta(f"last_initiate_{self._plan_name}")
                 if last_time_str:
                     self._last_auto_initiate_at = float(last_time_str)
-                    logger.info(f"[{plan_display}] 重新加载上次发起时间成功: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self._last_auto_initiate_at))}")
-            except Exception as e:
-                # 再次失败也不要报错刷屏，静默处理即可
+                    logger.info(
+                        f"[{plan_display}] 重新加载上次发起时间成功: "
+                        f"{time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(self._last_auto_initiate_at))}"
+                    )
+            except Exception:
                 pass
 
+        should_try_auto_initiate = True
         if self._last_auto_initiate_at and (now - self._last_auto_initiate_at) < cooldown_seconds:
-            remaining = int(cooldown_seconds - (now - self._last_auto_initiate_at))
-            # logger.debug(f"[{plan_display}] 冷却中，还需等待{remaining}秒")
-            return
+            should_try_auto_initiate = False
+        elif random.random() >= prob:
+            should_try_auto_initiate = False
 
-        random_value = random.random()
-        # logger.debug(f"[{plan_display}] 随机值:{random_value:.3f}, 触发阈值:{prob}")
-        if random_value >= prob:
-            # logger.debug(f"[{plan_display}] 未触发概率检查，跳过本次执行")
-            return
+        if should_try_auto_initiate:
+            logger.info(f"[{plan_display}] 通过概率检查，开始执行自动发起")
+            async with self._lock:
+                now = time.time()
+                if self._last_auto_initiate_at and (now - self._last_auto_initiate_at) < cooldown_seconds:
+                    logger.warning(f"[{plan_display}] 并发检查：仍在冷却中")
+                else:
+                    ok, msg = await self._auto_initiate_action.execute()
+                    now_ts = time.time()
+                    self._last_auto_initiate_at = now_ts
 
-        logger.info(f"[{plan_display}] 通过概率检查，开始执行自动发起")
+                    try:
+                        from ..utils import get_global_db_manager
 
-        async with self._lock:
-            now = time.time()
-            if self._last_auto_initiate_at and (now - self._last_auto_initiate_at) < cooldown_seconds:
-                logger.warning(f"[{plan_display}] 并发检查：仍在冷却中")
-                return
+                        db_mgr = get_global_db_manager()
+                        db_mgr.set_meta(f"last_initiate_{self._plan_name}", str(now_ts))
+                    except Exception as e:
+                        logger.warning(f"[{plan_display}] 持久化时间戳失败: {e}")
 
-            stream_config = str(self._get_config(f"{self._plan_name}.stream_config", "")).strip()
-            logger.debug(f"[{plan_display}] 聊天流配置: '{stream_config}'")
-            if not stream_config:
-                logger.warning(f"[{plan_display}] 聊天流配置为空，跳过自动发起")
-                return
+                    if ok:
+                        logger.info(f"[{plan_display}] ✅ 自动发起成功: {msg}")
+                    else:
+                        logger.warning(f"[{plan_display}] ❌ 自动发起失败: {msg}")
 
-            stream_id = self._parse_stream_config_to_stream_id(stream_config)
-            logger.debug(f"[{plan_display}] 解析得到stream_id: '{stream_id}'")
-            if not stream_id:
-                logger.warning(f"[{plan_display}] stream_config无效: {stream_config}")
-                return
-
-            logger.info(f"[{plan_display}] 开始执行自动发起，目标聊天流: {stream_id}")
-
-            # AutoInitiateAction 依赖 self.message.chat_stream.stream_id，因此这里构造一个最小 message
-            class _PlanChatStream:
-                def __init__(self, sid: str):
-                    self.stream_id = sid
-
-            class _PlanMessage:
-                def __init__(self, sid: str):
-                    self.chat_stream = _PlanChatStream(sid)
-
-            self._auto_initiate_action.message = _PlanMessage(stream_id)  # type: ignore
-
-            ok, msg = await self._auto_initiate_action.execute()
-            
-            # 无论成功失败，都更新最后发起时间，避免失败后的高频重试
-            now_ts = time.time()
-            self._last_auto_initiate_at = now_ts
-            
-            # 持久化保存
-            try:
-                from ..utils import get_global_db_manager
-                db_mgr = get_global_db_manager()
-                db_mgr.set_meta(f"last_initiate_{self._plan_name}", str(now_ts))
-            except Exception as e:
-                logger.warning(f"[{plan_display}] 持久化时间戳失败: {e}")
-
-            if ok:
-                logger.info(f"[{plan_display}] ✅ 自动发起成功: {msg}")
-            else:
-                logger.warning(f"[{plan_display}] ❌ 自动发起失败: {msg}")
-
-        # ---------------------------------------------------------
-        # 5) 话题捕捉 (Topic Capture) 逻辑
-        # ---------------------------------------------------------
+        # 6) 话题捕捉（独立于自动发起触发）
         try:
             capture_enabled = bool(self._get_config(f"{self._plan_name}.topic_capture.enabled", False))
             if capture_enabled:
                 capture_interval = int(self._get_config(f"{self._plan_name}.topic_capture.interval", 600))
                 capture_prob = float(self._get_config(f"{self._plan_name}.topic_capture.probability", 0.5))
-                
-                # 检查捕捉冷却
+
                 now = time.time()
                 last_capture = getattr(self, "_last_capture_at", 0)
-                
-                if (now - last_capture) >= capture_interval:
-                    if random.random() < capture_prob:
-                        logger.info(f"[{plan_display}] 触发话题捕捉检查...")
-                        
-                        # 实例化 TopicCaptureAction
-                        capture_action = TopicCaptureAction(
-                            action_data={},
-                            action_reasoning=f"Topic Capture via {self._plan_name}",
-                            cycle_timers={},
-                            thinking_id=f"capture_{int(now)}",
-                            chat_stream=self._auto_initiate_action.message.chat_stream, # 复用之前构造的chat_stream
-                            action_message=self._auto_initiate_action.action_message, # 复用
-                            plan_name=self._plan_name,
-                            auto_initiate_action=self._auto_initiate_action # 传递以获取config_manager
-                        )
-                        
-                        # 执行捕捉
-                        cap_ok, cap_msg = await capture_action.execute()
-                        
-                        # 无论结果如何，更新时间避免高频调用LLM
-                        # (虽然如果没触发回复，其实可以短一点冷却，但为了省tokens还是统一冷却)
-                        self._last_capture_at = time.time()
-                        
-                        if cap_ok:
-                            logger.info(f"[{plan_display}] 🎯 话题捕捉并在群内发言: {cap_msg}")
-                    # else: logger.debug("Topic capture skipped by probability")
-                # else: logger.debug("Topic capture in cooldown")
+                if (now - last_capture) >= capture_interval and random.random() < capture_prob:
+                    logger.info(f"[{plan_display}] 触发话题捕捉检查...")
+                    capture_action = TopicCaptureAction(
+                        action_data={},
+                        action_reasoning=f"Topic Capture via {self._plan_name}",
+                        cycle_timers={},
+                        thinking_id=f"capture_{int(now)}",
+                        chat_stream=self._auto_initiate_action.message.chat_stream,
+                        action_message=self._auto_initiate_action.action_message,
+                        plan_name=self._plan_name,
+                        auto_initiate_action=self._auto_initiate_action,
+                    )
+
+                    cap_ok, cap_msg = await capture_action.execute()
+                    self._last_capture_at = time.time()
+                    if cap_ok:
+                        logger.info(f"[{plan_display}] 🎯 话题捕捉并在群内发言: {cap_msg}")
         except Exception as e:
             logger.error(f"[{plan_display}] 话题捕捉逻辑出错: {e}")
 

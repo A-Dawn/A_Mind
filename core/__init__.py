@@ -1,16 +1,28 @@
 """
 核心组件包
 
-包含配置管理、依赖注入、异常处理等核心组件
+提供核心组件的惰性导出，避免包初始化时触发循环导入。
 """
 
-from .config_manager import ConfigManager
-from .dependency_container import DependencyContainer
-from .permissions import PermissionManager
-
 __all__ = [
-    'ConfigManager',
-    'DependencyContainer',
-    'PermissionManager'
+    "ConfigManager",
+    "DependencyContainer",
+    "PermissionManager",
 ]
+
+
+def __getattr__(name):
+    if name == "ConfigManager":
+        from .config_manager import ConfigManager
+
+        return ConfigManager
+    if name == "DependencyContainer":
+        from .dependency_container import DependencyContainer
+
+        return DependencyContainer
+    if name == "PermissionManager":
+        from .permissions import PermissionManager
+
+        return PermissionManager
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
