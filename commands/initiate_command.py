@@ -5,7 +5,7 @@ import re
 import time
 from typing import Tuple, Optional
 
-from src.plugin_system import BaseCommand, ComponentInfo, ComponentType, CommandInfo
+from maibot_sdk.compat import BaseCommand, ComponentInfo, ComponentType, CommandInfo
 from ..core.permissions import require_permission
 
 # Logger import with fallback
@@ -168,8 +168,8 @@ class InitiateCommand(BaseCommand):
                         def get_model_config(self, plan_name=None, service_name=None):
                             """获取模型配置"""
                             return {
-                                "model_name": self.get("llm.model_name", "tool_use"),
-                                "fallback_model_name": self.get("llm.fallback_model_name", "tool_use"),
+                                "model_name": self.get("llm.model_name", "utils"),
+                                "fallback_model_name": self.get("llm.fallback_model_name", "replyer"),
                                 "temperature": self.get("llm.temperature", 0.7),
                                 "max_tokens": self.get("llm.max_tokens", 1500),
                             }

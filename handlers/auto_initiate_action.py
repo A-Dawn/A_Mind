@@ -6,11 +6,11 @@
 
 from __future__ import annotations
 
-import time
-import random
 from typing import Any, Dict, List, Optional, Tuple
+import random
+import time
 
-from src.plugin_system import ActionActivationType, BaseAction
+from maibot_sdk.compat import ActionActivationType, BaseAction
 
 # Logger import with fallback
 try:
@@ -26,7 +26,7 @@ from ..services.brainstorm_generator import BrainstormGenerator
 from ..services.decision_selector import DecisionSelector
 from ..services.information_retriever import InformationRetriever
 from ..services.response_monitor import ResponseMonitor
-from ..utils import get_global_db_manager
+from ..utils import build_amind_prompt_context, get_global_db_manager, resolve_stream_config_to_stream_id
 
 logger = get_logger(__name__)
 
@@ -91,8 +91,8 @@ class AutoInitiateAction(BaseAction):
                             def get_model_config(self, plan_name=None, service_name=None):
                                 """获取模型配置"""
                                 return {
-                                    "model_name": "tool_use",
-                                    "fallback_model_name": "tool_use",
+                                    "model_name": "utils",
+                                    "fallback_model_name": "replyer",
                                     "temperature": 0.7,
                                     "max_tokens": 1500,
                                 }
@@ -112,8 +112,8 @@ class AutoInitiateAction(BaseAction):
                     def get_model_config(self, plan_name=None, service_name=None):
                         """获取模型配置"""
                         return {
-                            "model_name": "tool_use",
-                            "fallback_model_name": "tool_use",
+                            "model_name": "utils",
+                            "fallback_model_name": "replyer",
                             "temperature": 0.7,
                             "max_tokens": 1500,
                         }
@@ -139,7 +139,7 @@ class AutoInitiateAction(BaseAction):
                         class BasicConfigManager:
                             def get(self, key, default=None):
                                 defaults = {
-                                    "llm.model_name": "tool_use",
+                                    "llm.model_name": "utils",
                                     "llm.temperature": 0.7,
                                     "llm.max_tokens": 1500,
                                 }
@@ -148,8 +148,8 @@ class AutoInitiateAction(BaseAction):
                             def get_model_config(self, plan_name=None, service_name=None):
                                 """获取模型配置"""
                                 return {
-                                    "model_name": self.get("llm.model_name", "tool_use"),
-                                    "fallback_model_name": "tool_use",
+                                    "model_name": self.get("llm.model_name", "utils"),
+                                    "fallback_model_name": "replyer",
                                     "temperature": self.get("llm.temperature", 0.7),
                                     "max_tokens": self.get("llm.max_tokens", 1500),
                                 }
@@ -159,7 +159,7 @@ class AutoInitiateAction(BaseAction):
                 class BasicConfigManager:
                     def get(self, key, default=None):
                         defaults = {
-                            "llm.model_name": "tool_use",
+                            "llm.model_name": "utils",
                             "llm.temperature": 0.7,
                             "llm.max_tokens": 1500,
                         }
@@ -168,8 +168,8 @@ class AutoInitiateAction(BaseAction):
                     def get_model_config(self, plan_name=None, service_name=None):
                         """获取模型配置"""
                         return {
-                            "model_name": self.get("llm.model_name", "tool_use"),
-                            "fallback_model_name": "tool_use",
+                            "model_name": self.get("llm.model_name", "utils"),
+                            "fallback_model_name": "replyer",
                             "temperature": self.get("llm.temperature", 0.7),
                             "max_tokens": self.get("llm.max_tokens", 1500),
                         }
@@ -195,7 +195,7 @@ class AutoInitiateAction(BaseAction):
                         class BasicConfigManager:
                             def get(self, key, default=None):
                                 defaults = {
-                                    "llm.model_name": "tool_use",
+                                    "llm.model_name": "utils",
                                     "llm.temperature": 0.7,
                                     "llm.max_tokens": 1500,
                                 }
@@ -204,8 +204,8 @@ class AutoInitiateAction(BaseAction):
                             def get_model_config(self, plan_name=None, service_name=None):
                                 """获取模型配置"""
                                 return {
-                                    "model_name": self.get("llm.model_name", "tool_use"),
-                                    "fallback_model_name": "tool_use",
+                                    "model_name": self.get("llm.model_name", "utils"),
+                                    "fallback_model_name": "replyer",
                                     "temperature": self.get("llm.temperature", 0.7),
                                     "max_tokens": self.get("llm.max_tokens", 1500),
                                 }
@@ -215,7 +215,7 @@ class AutoInitiateAction(BaseAction):
                 class BasicConfigManager:
                     def get(self, key, default=None):
                         defaults = {
-                            "llm.model_name": "tool_use",
+                            "llm.model_name": "utils",
                             "llm.temperature": 0.7,
                             "llm.max_tokens": 1500,
                         }
@@ -224,8 +224,8 @@ class AutoInitiateAction(BaseAction):
                     def get_model_config(self, plan_name=None, service_name=None):
                         """获取模型配置"""
                         return {
-                            "model_name": self.get("llm.model_name", "tool_use"),
-                            "fallback_model_name": "tool_use",
+                            "model_name": self.get("llm.model_name", "utils"),
+                            "fallback_model_name": "replyer",
                             "temperature": self.get("llm.temperature", 0.7),
                             "max_tokens": self.get("llm.max_tokens", 1500),
                         }
@@ -325,10 +325,8 @@ class AutoInitiateAction(BaseAction):
     def _parse_stream_config_to_stream_id(self, stream_config_str: str) -> Optional[str]:
         """将 stream_config 字符串解析为 stream_id"""
         try:
-            # 例：qq:123456:group
-            if stream_config_str and ":" in stream_config_str:
-                return stream_config_str
-            return None
+            stream_id = resolve_stream_config_to_stream_id(stream_config_str)
+            return stream_id or None
         except Exception:
             return None
 
@@ -511,8 +509,8 @@ class AutoInitiateAction(BaseAction):
     ) -> str:
         """生成发送内容 - 基于系统人设进行内容生成"""
         try:
-            from src.plugin_system.apis import llm_api
-            from src.plugin_system.apis.llm_api import get_available_models
+            from maibot_sdk.compat.apis import llm_api
+            from maibot_sdk.compat.apis.llm_api import get_available_models
 
             use_builtin = self.get_config("llm.use_builtin", True)
             if not use_builtin:
@@ -532,10 +530,34 @@ class AutoInitiateAction(BaseAction):
                 if topic.last_activity
                 else "未知"
             )
+            stream_id = self._get_target_stream_id()
+            knowledge_query = (
+                f"{topic.title} {topic.description} "
+                f"{decision_result.selected_topic.title} {decision_result.selected_topic.description}"
+            )
+            prompt_context = await build_amind_prompt_context(
+                stream_id,
+                query=knowledge_query,
+                recent_limit=12,
+                include_knowledge=True,
+                include_personality=not bool(enable_personality and system_personality),
+            )
+            scene_context = prompt_context.get("scene") or "无"
+            recent_chat_context = prompt_context.get("recent_chat") or "无"
+            knowledge_context = prompt_context.get("knowledge") or "无"
 
             if enable_personality and system_personality:
                 content_prompt = f"""你现在是以下人设：
 {system_personality}
+
+当前场景与聊天上下文：
+{scene_context}
+
+最近聊天片段：
+{recent_chat_context}
+
+相关记忆/知识：
+{knowledge_context}
 
 基于这个身份和以下信息，为话题“{topic.title}”生成一段吸引人的讨论内容：
 
@@ -554,13 +576,23 @@ class AutoInitiateAction(BaseAction):
 要求：
 1. 保持人设的性格特点和表达风格
 2. 生成一段自然、吸引人的讨论内容，输出简体中文
-3. 融入相关信息，但不要简单复述
-4. 鼓励用户参与讨论
-5. 内容长度适中（80-150字）
-6. 直接输出生成的内容，不要添加额外说明
+3. 结合最近聊天氛围和场景，避免突然、机械或像公告
+4. 可以吸收相关记忆/知识，但不要生硬复述资料
+5. 鼓励用户参与讨论
+6. 内容长度适中（80-150字）
+7. 直接输出生成的内容，不要添加额外说明
 """
             else:
                 content_prompt = f"""基于以下信息，为话题“{topic.title}”生成一段吸引人的讨论内容：
+
+当前场景与聊天上下文：
+{scene_context}
+
+最近聊天片段：
+{recent_chat_context}
+
+相关记忆/知识：
+{knowledge_context}
 
 原始话题信息：
 - 标题：{topic.title}
@@ -577,21 +609,23 @@ class AutoInitiateAction(BaseAction):
 要求：
 1. 生成一段自然、吸引人的讨论内容，输出简体中文
 2. 融入相关信息，但不要简单复述
-3. 鼓励用户参与讨论
-4. 内容长度适中（80-150字）
-5. 保持友好和开放的态度
-6. 直接输出生成的内容，不要添加额外说明
+3. 结合最近聊天氛围和场景，避免突然、机械或像公告
+4. 鼓励用户参与讨论
+5. 内容长度适中（80-150字）
+6. 保持友好和开放的态度
+7. 直接输出生成的内容，不要添加额外说明
 """
 
-            logger.info(
-                "[A_mind] 生成发送内容提示词 (人设注入: %s):\n%s",
-                bool(enable_personality and system_personality),
-                content_prompt,
-            )
+            if self.get_config("logging.features.show_llm_prompts", False):
+                logger.info(
+                    "[A_mind] 生成发送内容提示词 (人设注入: %s):\n%s",
+                    bool(enable_personality and system_personality),
+                    content_prompt,
+                )
 
             try:
                 available_models = get_available_models()
-                model_name = self.get_config("llm.model_name", "tool_use")
+                model_name = self.get_config("llm.model_name", "utils")
                 model_config = available_models.get(model_name)
 
                 if not model_config:
@@ -639,8 +673,9 @@ class AutoInitiateAction(BaseAction):
                     personality_parts.append(f"人设：{personality_config.personality}")
                 if getattr(personality_config, "reply_style", None):
                     personality_parts.append(f"表达风格：{personality_config.reply_style}")
-                if getattr(personality_config, "plan_style", None):
-                    personality_parts.append(f"行为规则：{personality_config.plan_style}")
+                plan_style = getattr(personality_config, "plan_style", None)
+                if plan_style:
+                    personality_parts.append(f"行为规则：{plan_style}")
 
             if not personality_parts:
                 return "你是一个喜欢上网聊天的大学生，现在正在上网和群友聊天，有时有点攻击性，有时比较温柔"
@@ -1042,8 +1077,8 @@ class AutoInitiateAction(BaseAction):
     async def _expand_queries_with_llm(self, keywords: List[str]) -> List[str]:
         """Strategy 2: 使用LLM将关键词转化为具体的动态查询"""
         try:
-            from src.plugin_system.apis import llm_api
-            from src.plugin_system.apis.llm_api import get_available_models
+            from maibot_sdk.compat.apis import llm_api
+            from maibot_sdk.compat.apis.llm_api import get_available_models
             
             if not keywords:
                 return []
@@ -1074,7 +1109,7 @@ class AutoInitiateAction(BaseAction):
 2026年 春节 热门电影 票房
 2026年 科技圈 重大事件
 """
-            model_name = self.get_config("llm.model_name", "tool_use")
+            model_name = self.get_config("llm.model_name", "utils")
             available_models = get_available_models()
             model_config = available_models.get(model_name)
             

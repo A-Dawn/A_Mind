@@ -5,7 +5,7 @@
 """
 
 from typing import Tuple, Optional
-from src.plugin_system import BaseCommand
+from maibot_sdk.compat import BaseCommand
 
 # Logger import with fallback
 try:

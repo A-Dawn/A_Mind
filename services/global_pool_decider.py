@@ -5,8 +5,8 @@
 import json
 from typing import Any, Dict, List, Optional, Tuple
 
-from src.plugin_system.apis import llm_api
-from src.plugin_system.apis.llm_api import get_available_models
+from maibot_sdk.compat.apis import llm_api
+from maibot_sdk.compat.apis.llm_api import get_available_models
 
 try:
     from ..core.amind_logger import get_logger
@@ -123,7 +123,7 @@ class GlobalPoolDecider:
         whitelist_streams: List[str],
     ) -> Optional[Dict[str, Any]]:
         try:
-            model_name = str(self._get_config("llm.model_name", "tool_use"))
+            model_name = str(self._get_config("llm.model_name", "utils"))
             available_models = get_available_models()
             model_config = available_models.get(model_name)
             if not model_config and available_models:

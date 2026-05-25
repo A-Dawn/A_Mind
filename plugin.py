@@ -35,29 +35,31 @@ try:
 except ImportError:
     BS4_AVAILABLE = False
 
-from src.plugin_system import (
-    BasePlugin,
-    register_plugin,
+from maibot_sdk import MaiBotPlugin
+from maibot_sdk.compat import _context_holder
+from maibot_sdk.compat import (
+    ActionActivationType,
     BaseAction,
     BaseCommand,
     BaseEventHandler,
-    ComponentInfo,
+    BasePlugin,
     CommandInfo,
+    ComponentInfo,
     ComponentType,
-    ActionActivationType,
-    EventType,
     ConfigField,
+    EventType,
     MaiMessages,
     ReplyContentType,
+    register_plugin,
 )
-from src.plugin_system.apis import llm_api, generator_api
-from src.plugin_system.apis.llm_api import get_available_models
-from .core.amind_logger import get_logger
+from maibot_sdk.compat.apis import generator_api, llm_api
+from maibot_sdk.compat.apis.llm_api import get_available_models
+
 from src.config.config import global_config
 from src.manager.async_task_manager import AsyncTask, async_task_manager
 
-from maibot_sdk import MaiBotPlugin
-from maibot_sdk.compat import _context_holder
+from .core.amind_logger import get_logger
+from .handlers.topic_capture_action import TopicCaptureAction
 
 # 导入重构后的模块
 from .core.dependency_container import DependencyContainer
@@ -695,6 +697,7 @@ class AMindPlugin(BasePlugin):
             (GlobalPoolCollectorEventHandler.get_handler_info(), GlobalPoolCollectorEventHandler),
             (StateCheckAction.get_action_info(), StateCheckAction),
             (AutoInitiateAction.get_action_info(), AutoInitiateAction),
+            (TopicCaptureAction.get_action_info(), TopicCaptureAction),
         ]
 
 
@@ -824,6 +827,7 @@ class AMindSDKPlugin(MaiBotPlugin):
         if ctype == "action":
             parameters = getattr(instance, "action_parameters", {}) or {}
             parameters_schema = _legacy_action_parameters_to_tool_schema(parameters)
+            activation_type = _legacy_enum_value(getattr(instance, "activation_type", "always"), "always")
             return {
                 "type": "TOOL",
                 "component_type": "TOOL",
@@ -833,9 +837,15 @@ class AMindSDKPlugin(MaiBotPlugin):
                     "brief_description": description or getattr(instance, "action_description", "") or name,
                     "detailed_description": _legacy_action_tool_description(instance, parameters_schema),
                     "parameters_raw": parameters_schema,
-                    "invoke_method": "plugin.invoke_tool",
-                    "activation_type": str(getattr(instance, "activation_type", "always")),
+                    "invoke_method": "plugin.invoke_action",
+                    "legacy_action": True,
+                    "legacy_component_type": "ACTION",
+                    "activation_type": activation_type,
+                    "activation_keywords": list(getattr(instance, "activation_keywords", []) or []),
+                    "activation_probability": float(getattr(instance, "random_activation_probability", 0.0) or 0.0),
                     "action_parameters": parameters,
+                    "action_require": list(getattr(instance, "action_require", []) or []),
+                    "associated_types": list(getattr(instance, "associated_types", []) or []),
                     "parallel_action": bool(getattr(instance, "parallel_action", False)),
                     "handler_name": f"_amind_dispatch__{name}",
                     "legacy": True,
@@ -889,6 +899,7 @@ class AMindSDKPlugin(MaiBotPlugin):
         instance.container = self._legacy.container
         instance.plugin_dir = self.plugin_dir
         instance._plugin = self._legacy
+        instance.config_manager = self._legacy.container.config_manager
         instance.action_data = _extract_tool_action_data(kwargs)
         instance.action_reasoning = str(kwargs.get("reasoning", "") or kwargs.get("action_reasoning", "") or "")
         instance._stream_id = str(kwargs.get("stream_id", "") or kwargs.get("chat_id", "") or "")
@@ -917,6 +928,12 @@ def _get_nested_config(config: Dict[str, Any], key: str, default: Any = None) ->
         else:
             return default
     return current
+
+
+def _legacy_enum_value(value: Any, default: str = "") -> str:
+    enum_value = getattr(value, "value", value)
+    normalized = str(enum_value or "").strip()
+    return normalized or default
 
 
 def _merge_config(default_config: Dict[str, Any], current_config: Dict[str, Any]) -> Dict[str, Any]:
@@ -1072,11 +1089,18 @@ def _install_legacy_llm_patch() -> None:
         return
 
     def _amind_get_available_models() -> Dict[str, Any]:
+        try:
+            from src.services import llm_service
+
+            models = llm_service.get_available_models()
+            if isinstance(models, dict) and models:
+                return {str(name): {"name": str(name)} for name in models.keys()}
+        except Exception:
+            pass
         return {
-            "tool_use": {"name": "tool_use"},
+            "utils": {"name": "utils"},
             "replyer": {"name": "replyer"},
             "planner": {"name": "planner"},
-            "utils": {"name": "utils"},
         }
 
     async def _amind_generate_with_model(
@@ -1112,13 +1136,12 @@ def _install_legacy_llm_patch() -> None:
         return True, str(result), "", model_name
 
     modules_to_patch = []
-    for module_name in ("maibot_sdk.compat.apis.llm_api", "src.plugin_system.apis.llm_api"):
-        module = sys.modules.get(module_name)
-        if module is None:
-            with contextlib.suppress(Exception):
-                module = importlib.import_module(module_name)
-        if module is not None and module not in modules_to_patch:
-            modules_to_patch.append(module)
+    module = sys.modules.get("maibot_sdk.compat.apis.llm_api")
+    if module is None:
+        with contextlib.suppress(Exception):
+            module = importlib.import_module("maibot_sdk.compat.apis.llm_api")
+    if module is not None:
+        modules_to_patch.append(module)
     if compat_llm_api not in modules_to_patch:
         modules_to_patch.append(compat_llm_api)
 
@@ -1130,10 +1153,6 @@ def _install_legacy_llm_patch() -> None:
     with contextlib.suppress(Exception):
         apis_pkg = importlib.import_module("maibot_sdk.compat.apis")
         apis_pkg.llm_api = modules_to_patch[0]
-    with contextlib.suppress(Exception):
-        apis_pkg = importlib.import_module("src.plugin_system.apis")
-        apis_pkg.llm_api = modules_to_patch[-1]
-
     plugin_root = Path(__file__).parent.resolve()
     for module in list(sys.modules.values()):
         module_name = str(getattr(module, "__name__", "") or "")

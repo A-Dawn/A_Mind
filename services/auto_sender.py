@@ -2,28 +2,27 @@
 自动发送器 - 负责将生成的内容发送到聊天流
 """
 
+from typing import Any, Dict
 import time
-from typing import Dict, Any, List
 
 try:
     from ..models.auto_send import AutoSendRequest, SendResult
-    from ..utils import get_global_db_manager
+    from ..utils import get_global_db_manager, send_amind_text_to_stream
 except ImportError:
-    import sys
     from pathlib import Path
+    import sys
+
     plugin_path = Path(__file__).parent.parent
     if str(plugin_path) not in sys.path:
         sys.path.insert(0, str(plugin_path))
     from models.auto_send import AutoSendRequest, SendResult
-    from utils import get_global_db_manager
+    from utils import get_global_db_manager, send_amind_text_to_stream
 
 # Logger import with fallback
 try:
     from ..core.amind_logger import get_logger
 except ImportError:
     from core.amind_logger import get_logger
-from src.plugin_system.apis import send_api
-
 logger = get_logger(__name__)
 
 
@@ -48,7 +47,13 @@ class AutoSender:
 
             # 检查是否需要立即发送
             if self._should_send_immediately(request):
-                return await self._execute_send(request)
+                success = await self._execute_send(request)
+                if success:
+                    try:
+                        self.send_queue.remove(request)
+                    except ValueError:
+                        pass
+                return success
             else:
                 logger.info(
                     f"[A_Mind] 发送请求已排队: 话题{request.topic_id}, 计划发送时间{time.strftime('%H:%M:%S', time.localtime(request.scheduled_time))}"
@@ -107,13 +112,18 @@ class AutoSender:
                 logger.error(f"[A_Mind] 构建发送内容失败: {request.topic_id}")
                 return False
 
-            # 发送到聊天流（真实发送）
-            ok = await send_api.text_to_stream(send_content, stream_id=request.stream_id)
+            ok, send_reason = await send_amind_text_to_stream(request.stream_id, send_content)
             if not ok:
-                logger.error(f"[A_Mind] 自动发送失败: stream_id={request.stream_id}, topic={request.topic_id}")
+                logger.error(
+                    f"[A_Mind] 自动发送失败: stream_id={request.stream_id}, "
+                    f"topic={request.topic_id}, reason={send_reason}"
+                )
                 return False
 
-            logger.info(f"[A_Mind] 自动发送成功: stream_id={request.stream_id}, content={send_content[:100]}...")
+            logger.info(
+                f"[A_Mind] 直接自动发送成功: stream_id={request.stream_id}, "
+                f"topic={request.topic_id}, content={send_content[:100]}..."
+            )
 
             # 记录发送结果
             await self._record_send_result(
@@ -245,7 +255,8 @@ class AutoSender:
             if request.content and isinstance(request.content, str) and request.content.strip():
                 return request.content
 
-            topic = get_global_db_manager().get_topic(request.topic_id)
+            db_manager = self.db_manager or get_global_db_manager()
+            topic = db_manager.get_topic(request.topic_id)
             if not topic:
                 return request.content
 
@@ -263,12 +274,13 @@ class AutoSender:
     async def _build_followup_content(self, request: AutoSendRequest) -> str:
         """构建跟进内容"""
         try:
-            topic = get_global_db_manager().get_topic(request.topic_id)
+            db_manager = self.db_manager or get_global_db_manager()
+            topic = db_manager.get_topic(request.topic_id)
             if not topic:
                 return request.content
 
             # 获取最近回复
-            recent_replies = get_global_db_manager().get_recent_replies(request.topic_id, 3)
+            recent_replies = db_manager.get_recent_replies(request.topic_id, 3)
 
             if recent_replies:
                 content = f"🗣️ 关于 **{topic.title}** 的讨论很热烈！\n\n"
@@ -289,7 +301,8 @@ class AutoSender:
     async def _build_reminder_content(self, request: AutoSendRequest) -> str:
         """构建提醒内容"""
         try:
-            topic = get_global_db_manager().get_topic(request.topic_id)
+            db_manager = self.db_manager or get_global_db_manager()
+            topic = db_manager.get_topic(request.topic_id)
             if not topic:
                 return request.content
 
@@ -317,12 +330,13 @@ class AutoSender:
     def _update_topic_send_stats(self, topic_id: int, send_type: str):
         """更新话题发送统计"""
         try:
+            db_manager = self.db_manager or get_global_db_manager()
             updates = {
                 "auto_initiate_count": 0,  # 会在数据库管理器中递增
                 "last_auto_initiate_at": time.time(),
             }
 
-            get_global_db_manager().update_topic(topic_id, updates)
+            db_manager.update_topic(topic_id, updates)
             logger.info(f"[A_Mind] 话题发送统计已更新: {topic_id}")
 
         except Exception as e:

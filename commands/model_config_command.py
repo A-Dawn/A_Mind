@@ -3,7 +3,7 @@
 """
 from typing import Tuple
 
-from src.plugin_system import BaseCommand, ComponentInfo, ComponentType, CommandInfo
+from maibot_sdk.compat import BaseCommand, ComponentInfo, ComponentType, CommandInfo
 
 # Logger import with fallback
 try:
@@ -86,7 +86,7 @@ class ModelConfigCommand(BaseCommand):
         """格式化全局配置"""
         text = "**🌐 全局模型配置**\n"
         text += f"• 主模型: `{config_manager.get('llm.model_name', 'replyer')}`\n"
-        text += f"• 备选模型: `{config_manager.get('llm.fallback_model_name', 'tool_use')}`\n"
+        text += f"• 备选模型: `{config_manager.get('llm.fallback_model_name', 'replyer')}`\n"
         text += f"• 温度: `{config_manager.get_float('llm.temperature', 0.7)}`\n"
         text += f"• 最大token: `{config_manager.get_int('llm.max_tokens', 1500)}`\n\n"
         return text

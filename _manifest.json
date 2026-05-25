@@ -1,6 +1,6 @@
 {
   "manifest_version": 2,
-  "version": "0.5.0",
+  "version": "1.0.0",
   "name": "A_Mind 智能话题管理插件",
   "description": "基于大模型的智能话题发起、追踪和回复插件，支持权限控制和自动状态管理",
   "author": {
@@ -40,11 +40,13 @@
     "llm.generate",
     "llm.generate_with_tools",
     "llm.get_available_models",
+    "message.get_by_time_in_chat",
     "config.get",
     "config.get_plugin",
     "chat.get_all_streams",
     "chat.get_group_streams",
     "chat.get_private_streams",
+    "knowledge.search",
     "tool.get_definitions"
   ],
   "i18n": {

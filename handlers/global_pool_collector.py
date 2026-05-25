@@ -2,7 +2,7 @@
 总控池消息采集处理器
 """
 
-from src.plugin_system import BaseEventHandler, EventType
+from maibot_sdk.compat import BaseEventHandler, EventType
 
 try:
     from ..core.amind_logger import get_logger

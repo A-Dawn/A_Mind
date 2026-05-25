@@ -119,7 +119,7 @@ show_initiation_workflow = false
 ```toml
 [logging.features]
 show_search_results = false         # 搜索结果详情（通常很吵）
-show_llm_prompts = false            # LLM提示词（非常长）
+show_llm_prompts = false            # LLM提示词（非常长，可能包含聊天上下文、人设和记忆检索结果）
 show_topic_matching = false         # 话题匹配详情
 show_initiation_workflow = false    # 自发起工作流步骤
 show_performance_metrics = false     # 性能指标（耗时、计数）

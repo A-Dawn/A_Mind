@@ -3,7 +3,7 @@
 import re
 from typing import Tuple
 
-from src.plugin_system import BaseCommand, ComponentInfo, ComponentType, CommandInfo
+from maibot_sdk.compat import BaseCommand, ComponentType, CommandInfo
 from ..core.permissions import require_permission
 
 # Logger import with fallback
@@ -43,7 +43,6 @@ class StreamManagementCommand(BaseCommand):
 
             operation = match.group(1).lower()
             topic_id = int(match.group(2))
-            param = match.group(3) if match.group(3) else ""
 
             # 获取当前聊天流ID
             current_stream_id = getattr(getattr(self.message, "chat_stream", None), "stream_id", None)
@@ -69,13 +68,16 @@ class StreamManagementCommand(BaseCommand):
             if operation == "bind":
                 # 绑定当前聊天流到话题
                 if current_stream_id in topic.stream_ids:
-                    return False, f"话题 {topic_id} 已经绑定到当前聊天流", False
+                    await self.send_text(f"ℹ️ 当前聊天流已绑定\n📝 话题：{topic.title}\n🏷️聊天流：{current_stream_id}")
+                    return True, f"话题 {topic_id} 已经绑定到当前聊天流", True
 
                 new_stream_ids = topic.stream_ids + [current_stream_id]
                 success = get_global_db_manager().update_topic(topic_id, {"stream_ids": new_stream_ids})
 
                 if success:
-                    # 创建聊天流状态记录                    get_global_db_manager()._create_topic_stream_state(topic_id, current_stream_id)
+                    db_manager = get_global_db_manager()
+                    if not db_manager.get_topic_stream_state(topic_id, current_stream_id):
+                        db_manager._create_topic_stream_state(topic_id, current_stream_id)
                     await self.send_text(f"✅绑定成功！\n📝 话题：{topic.title}\n🏷️聊天流：{current_stream_id}")
                     return True, f"绑定聊天流成功 {topic_id} -> {current_stream_id}", True
                 else:

@@ -3,7 +3,7 @@
 **ARC's MIND – 智能话题与主动思维插件（for MaiBot）**
 
 ![A_Mind Logo](https://img.shields.io/badge/A_Mind-智能话题管理-blue?style=for-the-badge)
-![Version](https://img.shields.io/badge/版本-0.5.0-orange?style=flat-square)
+![Version](https://img.shields.io/badge/版本-1.0.0-orange?style=flat-square)
 ![Python](https://img.shields.io/badge/Python-3.11+-green?style=flat-square)
 ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=flat-square)
 
@@ -235,6 +235,32 @@ min_messages = 5            # 最小上下文长度
 4. **观点僵局**：需要第三方解围
 5. **话题早夭**：好话题没人接
 
+##### 直接主动发送链路
+
+A_Mind 的自动发起与话题捕捉现在使用插件自己的直接发送链路：
+
+```text
+A_Mind 选题/捕捉
+-> 注入聊天上下文、人设、场景、记忆/知识
+-> A_Mind 调用 LLM 生成最终文本
+-> send.text 直接发送到聊天流
+```
+
+这条链路不依赖 MaiBot 自带主动发言的 `Maisaka proactive` 队列，因此可以在主程序将自带主动聊天静默时继续工作。直接发送前会尽量补齐以下上下文：
+
+- 当前时间、Bot 名字、别名、人设、表达风格、行为规则
+- 当前聊天流信息、群聊/私聊通用注意事项、当前聊天额外 prompt
+- 目标聊天流最近消息片段
+- 相关记忆/知识检索结果（依赖宿主 `knowledge.search` 能力）
+- 话题标题、描述、参与度、回复数量、候选话题方向和置信度
+
+需要注意：
+
+- 直接发送不会进入 MaiBot 自带 Timing Gate、Planner 或 Replyer，因此最终文本不会再经过原生 Replyer 二次润色。
+- 如果希望彻底关闭 MaiBot 自带主动聊天，可以在主程序中将 `talk_value` / `private_talk_value` 设为 `0`；A_Mind 直接发送链路不会被该静默模式吞掉。
+- 由于 A_Mind 直接发送会自行读取最近聊天和检索知识，建议控制自动发起概率、冷却时间和总控池每日发送上限，避免多条主动链路同时过于活跃。
+- 超长 LLM prompt 默认不会写入日志；只有 `logging.features.show_llm_prompts = true` 时才会输出。
+
 ##### 配置总控池主动话题 (Global Pool)
 
 总控池会在白名单聊天流中汇总近期消息，按策略由LLM决定是否主动发起话题：
@@ -349,12 +375,21 @@ max_candidates_per_tick = 5
 - 测试版阶段，部分高级功能可能不稳定
 - 互联网搜索功能需要网络连接
 - 大量话题可能影响性能
+- 直接发送链路不会复用 MaiBot 原生 Replyer；语气贴合度取决于 A_Mind 注入的人设、聊天上下文和提示词质量
+- 记忆/知识补全依赖宿主 `knowledge.search` 能力；能力不可用时会自动降级为空，不会阻塞发送
 
 ---
 
 ## 📝 版本信息
 
-### 🎯 0.5.0 (2026-05-07) - 当前版本
+### 🎯 1.0.0 (2026-05-25) - 当前版本
+
+- ✅ **直接主动发送链路** - A_Mind 自动发起与话题捕捉直接生成最终文本并调用 `send.text`
+- ✅ **主动发言上下文补全** - 注入人设、场景、最近聊天片段、记忆/知识和话题状态
+- ✅ **自带主动关闭兼容** - 主程序 `talk_value = 0` / `private_talk_value = 0` 时仍可保留 A_Mind 主动效果
+- 🔧 **日志与依赖整理** - 默认不输出完整 LLM prompt，并声明 `knowledge.search` 能力
+
+### 🎯 0.5.0 (2026-05-07)
 
 - ✅ **MaiBot SDK 运行时迁移** - 支持 Manifest v2 与新的 `MaiBotPlugin` / `create_plugin()` 加载入口
 - ✅ **原生工具声明** - 将状态检查和自动发起动作暴露为新插件系统 native SDK Tool

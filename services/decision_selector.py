@@ -298,19 +298,19 @@ class DecisionSelector:
     async def _call_llm_with_fallback(self, prompt: str, request_type: str, temperature: float = 0.7, max_tokens: int = 1000,
                                      primary_model: str = None, fallback_model: str = None) -> str:
         """调用LLM，支持备选模型回退"""
-        from src.plugin_system.apis.llm_api import get_available_models
-        from src.plugin_system.apis import llm_api
+        from maibot_sdk.compat.apis.llm_api import get_available_models
+        from maibot_sdk.compat.apis import llm_api
 
         available_models = get_available_models()
 
         # 使用传入的模型名称或默认配置
         if primary_model is None:
-            primary_model_name = self.config.get("llm.model_name", "tool_use")
+            primary_model_name = self.config.get("llm.model_name", "utils")
         else:
             primary_model_name = primary_model
 
         if fallback_model is None:
-            fallback_model_name = self.config.get("llm.fallback_model_name", "tool_use")
+            fallback_model_name = self.config.get("llm.fallback_model_name", "replyer")
         else:
             fallback_model_name = fallback_model
 

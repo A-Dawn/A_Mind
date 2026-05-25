@@ -3,7 +3,7 @@
 """
 from typing import Tuple
 
-from src.plugin_system import BaseCommand, ComponentInfo, ComponentType, CommandInfo
+from maibot_sdk.compat import BaseCommand, ComponentInfo, ComponentType, CommandInfo
 
 # Logger import with fallback
 try:

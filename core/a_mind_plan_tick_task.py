@@ -1,10 +1,10 @@
 """
 A_Mind计划Tick任务
 """
+from typing import Callable
 import asyncio
 import random
 import time
-from typing import Callable
 
 from src.manager.async_task_manager import AsyncTask
 
@@ -16,6 +16,7 @@ except ImportError:
 from ..services.auto_sender import AutoSender
 from ..handlers.auto_initiate_action import AutoInitiateAction
 from ..handlers.topic_capture_action import TopicCaptureAction
+from ..utils import resolve_stream_config_to_stream_id
 
 logger = get_logger(__name__)
 
@@ -189,17 +190,7 @@ class AMindPlanTickTask(AsyncTask):
         例："qq:123456:group" / "qq:123456:private"。
         """
         try:
-            parts = stream_config_str.split(":")
-            if len(parts) != 3:
-                return ""
-
-            platform, id_str, stream_type = parts
-            is_group = stream_type == "group"
-
-            from src.chat.message_receive.chat_stream import get_chat_manager
-
-            stream_id = get_chat_manager().get_stream_id(platform, str(id_str), is_group=is_group)
-            return stream_id or ""
+            return resolve_stream_config_to_stream_id(stream_config_str)
 
         except Exception:
             return ""

@@ -105,7 +105,7 @@ class ConfigManager:
     @property
     def llm_model(self) -> str:
         """LLM模型名称"""
-        return self.get("llm.model_name", "tool_use")
+        return self.get("llm.model_name", "utils")
 
     @property
     def max_active_topics(self) -> int:
@@ -143,7 +143,7 @@ class ConfigManager:
 
         # 1. 获取全局默认配置
         config['model_name'] = self.get("llm.model_name", "replyer")
-        config['fallback_model_name'] = self.get("llm.fallback_model_name", "tool_use")
+        config['fallback_model_name'] = self.get("llm.fallback_model_name", "replyer")
         config['temperature'] = self.get_float("llm.temperature", 0.7)
         config['max_tokens'] = self.get_int("llm.max_tokens", 1500)
 
@@ -211,9 +211,9 @@ class ConfigManager:
             list: 已知可用模型名称列表
         """
         # 直接返回已知的模型名称列表
-        known_models = ["tool_use", "replyer", "planner", "utils"]
+        known_models = ["utils", "replyer", "planner"]
         try:
-            from src.plugin_system.apis.llm_api import get_available_models
+            from maibot_sdk.compat.apis.llm_api import get_available_models
             available_models = get_available_models()
             if available_models:
                 # 返回动态获取的模型名称

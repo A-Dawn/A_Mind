@@ -4,7 +4,7 @@
 import re
 from typing import Tuple
 
-from src.plugin_system import BaseCommand, ComponentInfo, ComponentType, CommandInfo
+from maibot_sdk.compat import BaseCommand, ComponentInfo, ComponentType, CommandInfo
 from ..core.permissions import require_permission
 
 # Logger import with fallback

@@ -4,15 +4,15 @@
 import time
 from typing import List, Dict, Any, Tuple, Optional
 
-from src.plugin_system import BaseAction, ActionActivationType
-from src.plugin_system.apis import llm_api
+from maibot_sdk.compat import BaseAction, ActionActivationType
+from maibot_sdk.compat.apis import llm_api
 
 # Logger import with fallback
 try:
     from ..core.amind_logger import get_logger
 except ImportError:
     from core.amind_logger import get_logger
-from src.plugin_system.apis.llm_api import get_available_models
+from maibot_sdk.compat.apis.llm_api import get_available_models
 try:
     from ..utils import get_global_db_manager
     from ..models.topic import Topic

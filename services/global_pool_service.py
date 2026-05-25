@@ -2,11 +2,11 @@
 总控池服务：消息采集、特征提取、候选话题构建、过期清理。
 """
 
+from collections import Counter, defaultdict
+from typing import Any, Dict, List, Optional, Tuple
 import hashlib
 import re
 import time
-from collections import Counter, defaultdict
-from typing import Any, Dict, List, Optional, Tuple
 
 try:
     import jieba
@@ -21,7 +21,7 @@ except ImportError:
     from core.amind_logger import get_logger
 
 from ..models.global_pool import PoolCandidate, PoolEvent
-from ..utils import get_global_db_manager
+from ..utils import get_global_db_manager, resolve_stream_config_to_stream_id
 
 logger = get_logger(__name__)
 
@@ -64,7 +64,12 @@ class GlobalPoolService:
         raw = self._get_config("global_pool.whitelist_streams", [])
         if not isinstance(raw, list):
             return []
-        streams = [str(item).strip() for item in raw if str(item).strip()]
+        streams = []
+        for item in raw:
+            configured_stream = str(item).strip()
+            if not configured_stream:
+                continue
+            streams.append(resolve_stream_config_to_stream_id(configured_stream) or configured_stream)
         return list(dict.fromkeys(streams))
 
     def collect_message(

@@ -4,15 +4,15 @@
 import time
 from typing import List, Optional
 
-from src.plugin_system import BaseEventHandler, EventType
-from src.plugin_system.apis import llm_api
+from maibot_sdk.compat import BaseEventHandler, EventType
+from maibot_sdk.compat.apis import llm_api
 
 # Logger import with fallback
 try:
     from ..core.amind_logger import get_logger
 except ImportError:
     from core.amind_logger import get_logger
-from src.plugin_system.apis.llm_api import get_available_models
+from maibot_sdk.compat.apis.llm_api import get_available_models
 # 使用相对导入
 from ..models.topic import Topic, TopicReply
 from ..utils import get_global_db_manager
@@ -212,7 +212,7 @@ class MessageTrackerEventHandler(BaseEventHandler):
             try:
                 # 获取模型配置
                 available_models = get_available_models()
-                model_name = self.get_config("llm.model_name", "tool_use")
+                model_name = self.get_config("llm.model_name", "utils")
                 model_config = available_models.get(model_name)
 
                 if not model_config:
@@ -533,7 +533,7 @@ class MessageTrackerEventHandler(BaseEventHandler):
         try:
             # 获取LLM配置
             available_models = get_available_models()
-            model_name = self.get_config("llm.model_name", "tool_use")
+            model_name = self.get_config("llm.model_name", "utils")
             model_config = available_models.get(model_name)
 
             if not model_config:
@@ -599,7 +599,7 @@ class MessageTrackerEventHandler(BaseEventHandler):
         """使用LLM识别要终止的目标话题"""
         try:
             available_models = get_available_models()
-            model_name = self.get_config("llm.model_name", "tool_use")
+            model_name = self.get_config("llm.model_name", "utils")
             model_config = available_models.get(model_name)
 
             if not model_config:

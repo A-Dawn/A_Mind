@@ -250,6 +250,36 @@ top_k = 5                                        # 返回最相关的K条结果
 similarity_threshold = 0.6                      # 相似度阈值
 ```
 
+> 注意：当前 A_Mind 直接发送链路会优先通过宿主 `knowledge.search` 能力检索相关记忆/知识。该能力不可用或无结果时会自动降级为空，不会中断自动发送。
+
+### 6.3 直接主动发送上下文
+
+A_Mind 自动发送与话题捕捉不再依赖 MaiBot 自带主动发言队列，而是由插件直接生成文本并调用 `send.text`。生成最终文本前会注入以下上下文：
+
+- 当前时间
+- Bot 名字、别名、人设、表达风格、行为规则
+- 当前聊天流 ID、聊天流名称、群聊/私聊场景
+- 群聊/私聊通用注意事项与当前聊天额外 prompt
+- 最近聊天片段
+- 相关记忆/知识检索结果
+- 话题标题、描述、参与度、回复数、候选方向、置信度
+
+这部分目前没有单独配置开关，遵循现有配置：
+
+```toml
+[auto_initiate]
+enable_personality_injection = true            # 是否注入人设
+
+[logging.features]
+show_llm_prompts = false                       # 是否输出完整LLM提示词
+```
+
+部署注意事项：
+
+- 如需关闭 MaiBot 自带主动聊天，同时保留 A_Mind 主动效果，可在主程序配置中将 `talk_value` / `private_talk_value` 设为 `0`。
+- 直接发送不会进入 MaiBot 原生 Timing Gate、Planner 或 Replyer；A_Mind 会自行生成最终文本。
+- 若 `show_llm_prompts = true`，日志会包含完整聊天上下文、记忆结果和人设信息，排查完成后建议关闭。
+
 ---
 
 ## 7. 提示词配置
