@@ -3,7 +3,7 @@
 **ARC's MIND – 智能话题与主动思维插件（for MaiBot）**
 
 ![A_Mind Logo](https://img.shields.io/badge/A_Mind-智能话题管理-blue?style=for-the-badge)
-![Version](https://img.shields.io/badge/版本-1.0.0-orange?style=flat-square)
+![Version](https://img.shields.io/badge/版本-1.0.1-orange?style=flat-square)
 ![Python](https://img.shields.io/badge/Python-3.11+-green?style=flat-square)
 ![License](https://img.shields.io/badge/License-AGPL--3.0-blue?style=flat-square)
 
@@ -382,7 +382,13 @@ max_candidates_per_tick = 5
 
 ## 📝 版本信息
 
-### 🎯 1.0.0 (2026-05-25) - 当前版本
+### 🎯 1.0.1 (2026-06-10) - 当前版本
+
+- ✅ **配置完成后自动创建任务** - 适配 MaiBot 1.0.0 插件挂载链路，配置保存/热更新后会刷新 A_Mind 后台周期任务
+- ✅ **后台任务上下文修复** - Plan 与总控池 Tick 任务执行时绑定插件上下文，确保 LLM/send 能力调用稳定
+- ✅ **任务清理完善** - 关闭 Plan 或卸载插件时会取消对应后台任务，避免旧任务残留
+
+### 🎯 1.0.0 (2026-05-25)
 
 - ✅ **直接主动发送链路** - A_Mind 自动发起与话题捕捉直接生成最终文本并调用 `send.text`
 - ✅ **主动发言上下文补全** - 注入人设、场景、最近聊天片段、记忆/知识和话题状态

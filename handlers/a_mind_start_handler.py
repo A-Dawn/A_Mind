@@ -2,7 +2,7 @@
 A_mind启动处理器
 """
 from pathlib import Path
-from typing import List
+from typing import Callable, Dict, List, Optional
 
 from maibot_sdk.compat import BaseEventHandler, EventType
 from src.manager.async_task_manager import async_task_manager
@@ -33,208 +33,278 @@ except ImportError:
 logger = get_logger(__name__)
 
 
-class AMindStartHandler(BaseEventHandler):
-    event_type = EventType.ON_START
-    handler_name = "a_mind_on_start"
-    handler_description = "A_Mind 启动时启动 Plan-1 周期任务"
+GLOBAL_POOL_TASK_NAME = "A_MindGlobalPoolTickTask"
 
-    def get_config(self, key: str, default=None):
+
+def get_amind_plan_task_name(plan_name: str) -> str:
+    return f"A_Mind{str(plan_name or '').capitalize()}TickTask"
+
+
+def _get_nested_config(config: Dict, key: str, default=None):
+    current = config
+    for part in str(key or "").split("."):
+        if isinstance(current, dict) and part in current:
+            current = current[part]
+        else:
+            return default
+    return current
+
+
+def make_amind_config_getter(plugin_config: Optional[Dict] = None) -> Callable:
+    config_data = plugin_config if isinstance(plugin_config, dict) else {}
+
+    def get_config(key: str, default=None):
         """获取配置"""
-        # 首先尝试从plugin_config获取
-        if self.plugin_config:
-            keys = key.split('.')
-            current = self.plugin_config
-            try:
-                for k in keys:
-                    current = current[k]
-                logger.debug(f"Found {key} in plugin_config: {current}")
-                return current
-            except (KeyError, TypeError) as e:
-                logger.debug(f"{key} not found in plugin_config: {e}")
-                pass
+        value = _get_nested_config(config_data, key, None)
+        if value is not None:
+            logger.debug(f"Found {key} in plugin_config: {value}")
+            return value
 
-        # 如果plugin_config不可用，尝试直接读取config.toml文件
         try:
             import toml
+
             config_path = Path(__file__).parent.parent / "config.toml"
             if config_path.exists():
-                config = toml.load(config_path)
-                keys = key.split('.')
-                current = config
-                for k in keys:
-                    current = current[k]
-                logger.debug(f"Found {key} in config.toml: {current}")
-                return current
+                value = _get_nested_config(toml.load(config_path), key, None)
+                if value is not None:
+                    logger.debug(f"Found {key} in config.toml: {value}")
+                    return value
         except Exception as e:
             logger.debug(f"Error reading config.toml for {key}: {e}")
-            pass
 
         logger.debug(f"Using default for {key}: {default}")
         return default
 
-    def _get_available_plans(self) -> List[str]:
-        """获取所有可用的plan配置"""
-        try:
-            # 尝试从plugin_config获取
-            if self.plugin_config:
-                plan_names = []
-                for key in self.plugin_config.keys():
-                    if key.startswith('plan') and key != 'plan1':  # plan1单独处理
-                        if isinstance(self.plugin_config[key], dict) and self.plugin_config[key].get('enabled', False):
-                            plan_names.append(key)
-                # 仅在plan1显式启用时包含
-                plan1_config = self.plugin_config.get('plan1')
-                if isinstance(plan1_config, dict) and plan1_config.get('enabled', False):
-                    plan_names.insert(0, 'plan1')
-                return plan_names
+    return get_config
 
-            # 如果plugin_config不可用，尝试直接读取config.toml文件
+
+def get_available_amind_plans(plugin_config: Optional[Dict] = None) -> List[str]:
+    """获取所有已启用的 plan 配置。"""
+    try:
+        config_data = plugin_config if isinstance(plugin_config, dict) else {}
+        if not config_data:
             try:
                 import toml
+
                 config_path = Path(__file__).parent.parent / "config.toml"
                 if config_path.exists():
-                    config = toml.load(config_path)
-                    plan_names = []
-                    for key in config.keys():
-                        if key.startswith('plan') and isinstance(config[key], dict):
-                            if config[key].get('enabled', False):
-                                plan_names.append(key)
-                    return sorted(plan_names)  # 按名称排序
+                    config_data = toml.load(config_path)
             except Exception:
-                pass
+                config_data = {}
 
-            return []
+        plan_names = []
+        for key in config_data.keys():
+            if key.startswith("plan") and isinstance(config_data[key], dict):
+                if config_data[key].get("enabled", False):
+                    plan_names.append(key)
+        return sorted(plan_names)
+    except Exception as e:
+        logger.error(f"[A_mind] 获取可用plans失败: {e}")
+        return []
+
+
+async def refresh_amind_background_tasks(
+    plugin_config: Optional[Dict] = None,
+    get_config: Optional[Callable] = None,
+    *,
+    legacy_plugin=None,
+    plugin_id: str = "",
+) -> List[str]:
+    get_config = get_config or make_amind_config_getter(plugin_config)
+    plugin_id = str(plugin_id or _get_current_plugin_id() or "")
+
+    available_plans = get_available_amind_plans(plugin_config)
+    logger.info(f"[A_mind] 发现 {len(available_plans)} 个启用的plan配置: {available_plans}")
+
+    if not available_plans:
+        logger.info("[A_mind] 未发现任何启用的plan配置")
+
+    await _stop_disabled_plan_tasks(available_plans)
+
+    for plan_name in available_plans:
+        try:
+            logger.info(f"[A_mind] 正在初始化 {plan_name} 任务")
+
+            class _DummyChatStream:
+                def __init__(self):
+                    self.stream_id = f"{plan_name}_startup"
+
+            dummy_action_data = {}
+            dummy_action_reasoning = f"{plan_name}_startup"
+            dummy_cycle_timers = {}
+            dummy_thinking_id = f"{plan_name}_init"
+            dummy_chat_stream = _DummyChatStream()
+
+            class _DummyUserInfo:
+                def __init__(self):
+                    self.user_id = "system"
+                    self.user_nickname = "System"
+
+            class _DummyGroupInfo:
+                def __init__(self):
+                    self.group_id = None
+                    self.group_name = None
+
+            class _DummyChatInfo:
+                def __init__(self):
+                    self.group_info = _DummyGroupInfo()
+
+            class _DummyActionMessage:
+                def __init__(self):
+                    self.chat_info = _DummyChatInfo()
+                    self.user_info = _DummyUserInfo()
+
+            dummy_action_message = _DummyActionMessage()
+
+            auto_initiate = AutoInitiateAction(
+                action_data=dummy_action_data,
+                action_reasoning=dummy_action_reasoning,
+                cycle_timers=dummy_cycle_timers,
+                thinking_id=dummy_thinking_id,
+                chat_stream=dummy_chat_stream,
+                action_message=dummy_action_message,
+                plan_name=plan_name,
+            )
+
+            container_owner = legacy_plugin
+            if container_owner is None:
+                try:
+                    from ..plugin import _plugin_instance
+
+                    container_owner = _plugin_instance
+                except Exception:
+                    container_owner = None
+
+            if container_owner is not None and hasattr(container_owner, "container"):
+                auto_initiate.container = container_owner.container
+                auto_initiate.config_manager = container_owner.container.config_manager
+            else:
+                class ConfigManager:
+                    def __init__(self, config_getter):
+                        self._get_config = config_getter
+
+                    def get(self, key, default=None):
+                        return self._get_config(key, default)
+
+                    def get_model_config(self, plan_name=None, service_name=None):
+                        return {
+                            "model_name": self.get("llm.model_name", "utils"),
+                            "fallback_model_name": self.get("llm.fallback_model_name", "replyer"),
+                            "temperature": self.get("llm.temperature", 0.7),
+                            "max_tokens": self.get("llm.max_tokens", 1500),
+                        }
+
+                auto_initiate.config_manager = ConfigManager(get_config)
+
+            class _DummyMessage:
+                def __init__(self):
+                    self.chat_stream = dummy_chat_stream
+                    self.message_info = None
+                    self.plain_text = ""
+                    self.processed_plain_text = ""
+
+            auto_initiate.message = _DummyMessage()
+
+            auto_sender = AutoSender()
+            auto_sender.get_config = get_config
+
+            task = AMindPlanTickTask(
+                plan_name=plan_name,
+                get_config=get_config,
+                auto_sender=auto_sender,
+                auto_initiate_action=auto_initiate,
+                plugin_id=plugin_id,
+            )
+            await async_task_manager.add_task(task)
+            logger.info(f"[A_mind] {plan_name} 任务创建成功")
+
         except Exception as e:
-            logger.error(f"[A_mind] 获取可用plans失败: {e}")
-            return []
+            logger.error(f"[A_mind] 创建 {plan_name} 任务失败: {e}")
+            continue
+
+    try:
+        global_pool_sender = AutoSender()
+        global_pool_sender.get_config = get_config
+        global_pool_task = AMindGlobalPoolTickTask(
+            get_config=get_config,
+            auto_sender=global_pool_sender,
+            plugin_id=plugin_id,
+        )
+        await async_task_manager.add_task(global_pool_task)
+        logger.info("[A_mind] 总控池任务创建成功")
+    except Exception as e:
+        logger.error(f"[A_mind] 创建总控池任务失败: {e}")
+
+    return available_plans
+
+
+def _get_current_plugin_id() -> str:
+    try:
+        from maibot_sdk.compat import _context_holder
+
+        ctx = _context_holder.get_context()
+        return str(getattr(ctx, "plugin_id", "") or "")
+    except Exception:
+        return ""
+
+
+async def stop_amind_background_tasks() -> None:
+    """停止 A_Mind 已注册的后台任务。"""
+    task_names = [
+        name
+        for name in list(getattr(async_task_manager, "tasks", {}).keys())
+        if name.startswith("A_Mind") and name.endswith("TickTask")
+    ]
+    for task_name in task_names:
+        await _cancel_task_by_name(task_name)
+
+
+async def _stop_disabled_plan_tasks(enabled_plans: List[str]) -> None:
+    enabled_task_names = {get_amind_plan_task_name(plan_name) for plan_name in enabled_plans}
+    current_task_names = list(getattr(async_task_manager, "tasks", {}).keys())
+    for task_name in current_task_names:
+        if not (task_name.startswith("A_Mind") and task_name.endswith("TickTask")):
+            continue
+        if task_name == GLOBAL_POOL_TASK_NAME:
+            continue
+        if task_name not in enabled_task_names:
+            await _cancel_task_by_name(task_name)
+
+
+async def _cancel_task_by_name(task_name: str) -> None:
+    task_map = getattr(async_task_manager, "tasks", {})
+    task = task_map.get(task_name)
+    if task is None:
+        return
+
+    task.cancel()
+    try:
+        await task
+    except BaseException as exc:
+        if exc.__class__.__name__ != "CancelledError":
+            logger.warning(f"[A_mind] 取消后台任务 {task_name} 时发生异常: {exc}")
+    if task_map.get(task_name) is task:
+        task_map.pop(task_name, None)
+
+
+class AMindStartHandler(BaseEventHandler):
+    event_type = EventType.ON_START
+    handler_name = "a_mind_on_start"
+    handler_description = "A_Mind 启动时启动后台周期任务"
+
+    def get_config(self, key: str, default=None):
+        return make_amind_config_getter(getattr(self, "plugin_config", None))(key, default)
+
+    def _get_available_plans(self) -> List[str]:
+        return get_available_amind_plans(getattr(self, "plugin_config", None))
 
     async def execute(self, message):
         try:
-            # 获取所有可用的plan配置
-            available_plans = self._get_available_plans()
-            logger.info(f"[A_mind] 发现 {len(available_plans)} 个启用的plan配置: {available_plans}")
-
-            if not available_plans:
-                logger.info("[A_mind] 未发现任何启用的plan配置")
-
-            # 为每个plan创建对应的任务
-            for plan_name in available_plans:
-                try:
-                    logger.info(f"[A_mind] 正在初始化 {plan_name} 任务")
-
-                    # 用 action 来复用现有自发起工作流
-                    # 为AutoInitiateAction提供必要的初始化参数（启动时不需要真实的参数）
-                    class _DummyChatStream:
-                        def __init__(self):
-                            self.stream_id = f"{plan_name}_startup"
-
-                    dummy_action_data = {}
-                    dummy_action_reasoning = f"{plan_name}_startup"
-                    dummy_cycle_timers = {}
-                    dummy_thinking_id = f"{plan_name}_init"
-                    dummy_chat_stream = _DummyChatStream()
-
-                    # 创建dummy action_message，避免BaseAction初始化时的chat_info访问错误
-                    class _DummyUserInfo:
-                        def __init__(self):
-                            self.user_id = "system"
-                            self.user_nickname = "System"
-
-                    class _DummyGroupInfo:
-                        def __init__(self):
-                            self.group_id = None
-                            self.group_name = None
-
-                    class _DummyChatInfo:
-                        def __init__(self):
-                            self.group_info = _DummyGroupInfo()
-
-                    class _DummyActionMessage:
-                        def __init__(self):
-                            self.chat_info = _DummyChatInfo()
-                            self.user_info = _DummyUserInfo()
-
-                    dummy_action_message = _DummyActionMessage()
-
-                    # 创建 AutoInitiateAction 实例
-                    auto_initiate = AutoInitiateAction(
-                        action_data=dummy_action_data,
-                        action_reasoning=dummy_action_reasoning,
-                        cycle_timers=dummy_cycle_timers,
-                        thinking_id=dummy_thinking_id,
-                        chat_stream=dummy_chat_stream,
-                        action_message=dummy_action_message,
-                        plan_name=plan_name,  # 传递plan名称用于模型配置
-                    )
-
-                    # 设置container引用，使服务能够从依赖注入容器正确初始化
-                    try:
-                        from ..plugin import _plugin_instance
-                        if _plugin_instance and hasattr(_plugin_instance, 'container'):
-                            auto_initiate.container = _plugin_instance.container
-                        else:
-                            # 如果无法获取container，设置一个能够读取config.toml的配置管理器
-                            class ConfigManager:
-                                def __init__(self, config_getter):
-                                    self._get_config = config_getter
-
-                                def get(self, key, default=None):
-                                    return self._get_config(key, default)
-
-                                def get_model_config(self, plan_name=None, service_name=None):
-                                    """获取模型配置"""
-                                    return {
-                                        "model_name": self.get("llm.model_name", "utils"),
-                                        "fallback_model_name": self.get("llm.fallback_model_name", "replyer"),
-                                        "temperature": self.get("llm.temperature", 0.7),
-                                        "max_tokens": self.get("llm.max_tokens", 1500),
-                                    }
-
-                            auto_initiate.config_manager = ConfigManager(self.get_config)
-                    except Exception:
-                        pass  # 如果无法设置container，服务会使用备用方案
-
-                    # 设置一个dummy message，避免任何访问message属性的代码出错
-                    class _DummyMessage:
-                        def __init__(self):
-                            self.chat_stream = dummy_chat_stream
-                            self.message_info = None
-                            self.plain_text = ""
-                            self.processed_plain_text = ""
-
-                    auto_initiate.message = _DummyMessage()
-
-                    # AutoSender 用于处理队列
-                    auto_sender = AutoSender()
-                    auto_sender.get_config = self.get_config
-
-                    # 创建对应的任务
-                    task = AMindPlanTickTask(
-                        plan_name=plan_name,
-                        get_config=self.get_config,
-                        auto_sender=auto_sender,
-                        auto_initiate_action=auto_initiate,
-                    )
-                    await async_task_manager.add_task(task)
-                    logger.info(f"[A_mind] {plan_name} 任务创建成功")
-
-                except Exception as e:
-                    logger.error(f"[A_mind] 创建 {plan_name} 任务失败: {e}")
-                    continue
-
-            # 启动总控池任务（功能是否实际执行由 global_pool.enabled 控制）
-            try:
-                global_pool_sender = AutoSender()
-                global_pool_sender.get_config = self.get_config
-                global_pool_task = AMindGlobalPoolTickTask(
-                    get_config=self.get_config,
-                    auto_sender=global_pool_sender,
-                )
-                await async_task_manager.add_task(global_pool_task)
-                logger.info("[A_mind] 总控池任务创建成功")
-            except Exception as e:
-                logger.error(f"[A_mind] 创建总控池任务失败: {e}")
-
+            plugin_config = getattr(self, "plugin_config", None)
+            await refresh_amind_background_tasks(
+                plugin_config=plugin_config,
+                get_config=make_amind_config_getter(plugin_config),
+            )
             return True, True, None, None, None
         except Exception as e:
             logger.error(f"[A_mind] ON_START handler failed: {e}")

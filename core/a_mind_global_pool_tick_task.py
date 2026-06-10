@@ -3,6 +3,7 @@ A_Mind 总控池 Tick 任务
 """
 
 import asyncio
+import contextlib
 import random
 import time
 from typing import Callable, Dict, Optional
@@ -28,13 +29,14 @@ logger = get_logger(__name__)
 class AMindGlobalPoolTickTask(AsyncTask):
     """总控池扫描与主动发起任务"""
 
-    def __init__(self, get_config: Callable, auto_sender: Optional[AutoSender] = None):
+    def __init__(self, get_config: Callable, auto_sender: Optional[AutoSender] = None, plugin_id: str = ""):
         self._get_config = get_config
         self._db = get_global_db_manager()
         self._auto_sender = auto_sender or AutoSender(self._db)
         self._service = GlobalPoolService(get_config=get_config, db_manager=self._db)
         self._decider = GlobalPoolDecider(get_config=get_config)
         self._lock = asyncio.Lock()
+        self._plugin_id = str(plugin_id or "")
         super().__init__(
             task_name="A_MindGlobalPoolTickTask",
             wait_before_start=0,
@@ -42,6 +44,10 @@ class AMindGlobalPoolTickTask(AsyncTask):
         )
 
     async def run(self):
+        with self._plugin_context():
+            await self._run_inner()
+
+    async def _run_inner(self):
         if not self._service.is_enabled():
             return
         if self._is_dnd_active():
@@ -290,3 +296,19 @@ class AMindGlobalPoolTickTask(AsyncTask):
         except Exception as e:
             logger.error(f"[A_Mind][GlobalPool] DND检查失败: {e}")
             return False
+
+    @contextlib.contextmanager
+    def _plugin_context(self):
+        token = None
+        try:
+            if self._plugin_id:
+                from maibot_sdk.compat import _context_holder
+
+                token = _context_holder.activate_plugin(self._plugin_id)
+            yield
+        finally:
+            if token is not None:
+                with contextlib.suppress(Exception):
+                    from maibot_sdk.compat import _context_holder
+
+                    _context_holder.deactivate_plugin(token)

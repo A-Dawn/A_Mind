@@ -712,6 +712,9 @@ class AMindSDKPlugin(MaiBotPlugin):
         self._component_specs: List[Tuple[ComponentInfo, Type]] = []
         self._component_instances: Dict[str, Any] = {}
         self._component_map: Dict[str, Dict[str, Any]] = {}
+        self._plugin_config: Dict[str, Any] = {}
+        self._task_refresh_lock = asyncio.Lock()
+        self._deferred_task_refresh: Optional[asyncio.Task] = None
         self.plugin_dir = Path(__file__).parent
         _install_legacy_llm_patch()
 
@@ -740,9 +743,23 @@ class AMindSDKPlugin(MaiBotPlugin):
         _context_holder.set_context(ctx)
 
     def set_plugin_config(self, config: Dict[str, Any]) -> None:
-        super().set_plugin_config(config)
+        self._plugin_config = config if isinstance(config, dict) else {}
+        parent_set_config = getattr(super(), "set_plugin_config", None)
+        if callable(parent_set_config):
+            parent_set_config(self._plugin_config)
         if hasattr(self._legacy, "set_plugin_config"):
-            self._legacy.set_plugin_config(config)
+            self._legacy.set_plugin_config(self._plugin_config)
+
+    def get_plugin_config_data(self) -> Dict[str, Any]:
+        parent_get_config = getattr(super(), "get_plugin_config_data", None)
+        if callable(parent_get_config):
+            try:
+                config_data = parent_get_config()
+                if isinstance(config_data, dict):
+                    return config_data
+            except Exception:
+                pass
+        return self._plugin_config
 
     def get_config(self, key: str, default: Any = None) -> Any:
         return _get_nested_config(self.get_plugin_config_data(), key, default)
@@ -761,8 +778,17 @@ class AMindSDKPlugin(MaiBotPlugin):
 
     async def on_load(self) -> None:
         await self._legacy.on_load()
+        self._schedule_background_task_refresh("on_load", delay_seconds=5)
 
     async def on_unload(self) -> None:
+        if self._deferred_task_refresh and not self._deferred_task_refresh.done():
+            self._deferred_task_refresh.cancel()
+        try:
+            from .handlers.a_mind_start_handler import stop_amind_background_tasks
+
+            await stop_amind_background_tasks()
+        except Exception as exc:
+            logger.error(f"[A_Mind] 后台任务停止失败: {exc}")
         shutdown = getattr(self._legacy, "on_unload", None)
         if callable(shutdown):
             result = shutdown()
@@ -773,6 +799,44 @@ class AMindSDKPlugin(MaiBotPlugin):
         del version
         if scope == "self":
             self.set_plugin_config(config_data if isinstance(config_data, dict) else {})
+            if self._deferred_task_refresh and not self._deferred_task_refresh.done():
+                self._deferred_task_refresh.cancel()
+            await self._refresh_background_tasks("config_update")
+
+    def _schedule_background_task_refresh(self, reason: str, delay_seconds: int = 0) -> None:
+        if self._deferred_task_refresh and not self._deferred_task_refresh.done():
+            self._deferred_task_refresh.cancel()
+
+        async def _run_delayed_refresh():
+            try:
+                if delay_seconds > 0:
+                    await asyncio.sleep(delay_seconds)
+                await self._refresh_background_tasks(reason)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.error(f"[A_Mind] 后台任务延迟刷新失败({reason}): {exc}")
+
+        self._deferred_task_refresh = asyncio.create_task(_run_delayed_refresh())
+
+    async def _refresh_background_tasks(self, reason: str) -> None:
+        async with self._task_refresh_lock:
+            try:
+                from .handlers.a_mind_start_handler import (
+                    make_amind_config_getter,
+                    refresh_amind_background_tasks,
+                )
+
+                plugin_config = self.get_plugin_config_data()
+                await refresh_amind_background_tasks(
+                    plugin_config=plugin_config,
+                    get_config=make_amind_config_getter(plugin_config),
+                    legacy_plugin=self._legacy,
+                    plugin_id=self.ctx.plugin_id if self._ctx else "",
+                )
+                logger.info(f"[A_Mind] 后台任务刷新完成: {reason}")
+            except Exception as exc:
+                logger.error(f"[A_Mind] 后台任务刷新失败({reason}): {exc}")
 
     def get_components(self) -> List[Dict[str, Any]]:
         if not self._component_specs:

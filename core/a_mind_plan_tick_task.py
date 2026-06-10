@@ -3,6 +3,7 @@ A_Mind计划Tick任务
 """
 from typing import Callable
 import asyncio
+import contextlib
 import random
 import time
 
@@ -29,11 +30,13 @@ class AMindPlanTickTask(AsyncTask):
         auto_sender: AutoSender,
         auto_initiate_action: AutoInitiateAction,
         plan_name_for_action: str = None,
+        plugin_id: str = "",
     ):
         self._plan_name = plan_name
         self._get_config = get_config
         self._auto_sender = auto_sender
         self._auto_initiate_action = auto_initiate_action
+        self._plugin_id = str(plugin_id or "")
 
         self._lock = asyncio.Lock()
         self._last_auto_initiate_at: float = 0
@@ -58,6 +61,10 @@ class AMindPlanTickTask(AsyncTask):
             logger.warning(f"[A_Mind] 加载上次发起时间失败: {e}")
 
     async def run(self):
+        with self._plugin_context():
+            await self._run_inner()
+
+    async def _run_inner(self):
         plan_display = self._plan_name.upper()
         # logger.debug(f"[{plan_display}] Tick执行开始 - {time.strftime('%H:%M:%S', time.localtime())}")
 
@@ -183,6 +190,22 @@ class AMindPlanTickTask(AsyncTask):
                         logger.info(f"[{plan_display}] 🎯 话题捕捉并在群内发言: {cap_msg}")
         except Exception as e:
             logger.error(f"[{plan_display}] 话题捕捉逻辑出错: {e}")
+
+    @contextlib.contextmanager
+    def _plugin_context(self):
+        token = None
+        try:
+            if self._plugin_id:
+                from maibot_sdk.compat import _context_holder
+
+                token = _context_holder.activate_plugin(self._plugin_id)
+            yield
+        finally:
+            if token is not None:
+                with contextlib.suppress(Exception):
+                    from maibot_sdk.compat import _context_holder
+
+                    _context_holder.deactivate_plugin(token)
 
     def _parse_stream_config_to_stream_id(self, stream_config_str: str) -> str:
         """从 `platform:id:type` 解析 stream_id。

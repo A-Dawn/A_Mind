@@ -1,5 +1,15 @@
 # A_Mind MaiBot SDK Migration
 
+## 2026-06-10 - Phase 9 MaiBot 1.0.0 Lifecycle Task Refresh
+
+- Bumped plugin version from `1.0.0` to `1.0.1`.
+- Fixed the MaiBot 1.0.0 configuration-complete path where `ON_START` had already fired before A_Mind was fully configured, so enabled Plan tasks were not created until a full restart.
+- Extracted A_Mind background task registration into a reusable refresh path shared by the legacy `ON_START` event handler and the SDK facade.
+- `AMindSDKPlugin.on_load()` now schedules a delayed task refresh, and `on_config_update(scope="self")` refreshes tasks immediately after plugin config updates.
+- Disabled Plan tasks are cancelled during refresh, and all A_Mind Tick tasks are stopped on plugin unload.
+- Plan and global-pool Tick tasks now activate the plugin context during execution, so background LLM and direct `send.text` calls resolve the correct SDK capabilities.
+- Verified `py_compile` for the plugin entrypoint, startup handler, and both Tick task modules; simulated SDK config updates confirm Plan task creation and cleanup.
+
 ## 2026-05-07 - Version Bump
 
 - Bumped plugin version from `0.4.0` to `0.5.0` for the MaiBot SDK runtime migration release.
